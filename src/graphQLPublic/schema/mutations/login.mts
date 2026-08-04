@@ -4,10 +4,10 @@ import { makeOnboardingData } from '@axiumine/koa-utils/lib/makeOnboardingData'
 import { setLoginCookies } from '@axiumine/koa-utils/lib/setLoginCookies'
 import { generateAccessToken, generateRefreshToken } from '@axiumine/koa-utils/lib/tokens'
 import { tryCatchRethrow } from '@axiumine/koa-utils/lib/tryCatchRethrow'
-import { tryLoginImprenditore } from '@lib/db/login/tryLoginImprenditore.mjs'
+import { tryLoginShopOwner } from '@lib/db/login/tryLoginShopOwner.mjs'
 import { updateLoginStats } from '@lib/db/login/updateLoginStats.mjs'
-import { setRedisLoginSessionImprenditore } from '@lib/db/redis/setRedisLoginSessionImprenditore.mjs'
-import { IRedisDataImprenditore } from '@thedoctorweb_agency/marketplace-common/others/Redis/IRedisDataImprenditore'
+import { setRedisLoginSessionShopOwner } from '@lib/db/redis/setRedisLoginSessionShopOwner.mjs'
+import { IRedisDataShopOwner } from '@thedoctorweb_agency/marketplace-common/others/Redis/IRedisDataShopOwner'
 import { GraphQLBoolean, GraphQLError, GraphQLNonNull, GraphQLString } from 'graphql'
 import mongoose, { Types } from 'mongoose'
 
@@ -41,8 +41,8 @@ export const login = {
 
 		try {
 			await session.withTransaction(async () => {
-				// @fixme checkUserLoginAuthorization di koa che controlla tutti i reqirements, che viene fatta dopo sotto
-				const user = await tryLoginImprenditore(email, password, session)
+				// @fixme koa's checkUserLoginAuthorization checks every requirement, and it runs further down
+				const user = await tryLoginShopOwner(email, password, session)
 
 				/*************************
 				 * redis data
@@ -52,7 +52,7 @@ export const login = {
 				const lastLogin = user.login.lastLogin ?? null
 				const step = makeOnboardingData(user.login)
 
-				const redisData: IRedisDataImprenditore = {
+				const redisData: IRedisDataShopOwner = {
 					_id: id.toString(),
 					email
 				}
@@ -61,7 +61,7 @@ export const login = {
 				accessToken = generateAccessToken()
 				const refreshToken = generateRefreshToken()
 
-				await setRedisLoginSessionImprenditore(accessToken, refreshToken, redisData)
+				await setRedisLoginSessionShopOwner(accessToken, refreshToken, redisData)
 				await updateLoginStats(id as Types.ObjectId, lastLogin, rememberMe, session)
 
 				setLoginCookies(ctx, refreshToken)

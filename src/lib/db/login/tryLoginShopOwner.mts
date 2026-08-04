@@ -1,7 +1,7 @@
 import { throwUnauthorizedError } from '@axiumine/koa-utils/graphQL/throw/throwUnauthorizedError'
 import { checkUserAuthorization } from '@lib/db/login/checkUserAuthorization.mjs'
-import { IImprenditoreLoginCheckData } from '@lib/db/login/IImprenditoreLoginCheckData.mjs'
-import { Imprenditore } from '@thedoctorweb_agency/marketplace-common/models/MongoDB/Imprenditore'
+import { IShopOwnerLoginCheckData } from '@lib/db/login/IShopOwnerLoginCheckData.mjs'
+import { ShopOwner } from '@thedoctorweb_agency/marketplace-common/models/MongoDB/ShopOwner'
 import { ClientSession } from 'mongoose'
 
 /**
@@ -10,12 +10,12 @@ import { ClientSession } from 'mongoose'
  * @param password
  * @param session
  */
-export async function tryLoginImprenditore(
+export async function tryLoginShopOwner(
 	email: string,
 	password: string,
 	session: ClientSession
-): Promise<IImprenditoreLoginCheckData> {
-	const user: IImprenditoreLoginCheckData | null = await Imprenditore.findOne(
+): Promise<IShopOwnerLoginCheckData> {
+	const user: IShopOwnerLoginCheckData | null = await ShopOwner.findOne(
 		{ 'login.email': email },
 		'_id disabled deleted login.password login.firstLogin login.lastLogin login.onboardingStep login.onboardingDone'
 	)

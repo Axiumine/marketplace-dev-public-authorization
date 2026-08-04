@@ -4,9 +4,9 @@ const setRedisLoginSession = vi.fn()
 
 vi.mock('@lib/db/redis/setRedisLoginSession.mjs', () => ({ setRedisLoginSession }))
 
-const { setRedisLoginSessionImprenditore } = await import('../src/lib/db/redis/setRedisLoginSessionImprenditore.mts')
+const { setRedisLoginSessionShopOwner } = await import('../src/lib/db/redis/setRedisLoginSessionShopOwner.mts')
 
-describe('setRedisLoginSessionImprenditore', () => {
+describe('setRedisLoginSessionShopOwner', () => {
 	beforeEach(() => setRedisLoginSession.mockReset())
 
 	// The refresh hash deliberately carries only the _id: everything else (email, onboarding step)
@@ -15,10 +15,10 @@ describe('setRedisLoginSessionImprenditore', () => {
 		const accessTokenRedisData = {
 			_id: '507f1f77bcf86cd799439011',
 			email: 'shop@marketplace.test',
-			onboardingStep: 'anagrafica'
+			onboardingStep: 'personalData'
 		}
 
-		await setRedisLoginSessionImprenditore('access-token', 'refresh-token', accessTokenRedisData)
+		await setRedisLoginSessionShopOwner('access-token', 'refresh-token', accessTokenRedisData)
 
 		expect(setRedisLoginSession).toHaveBeenCalledExactlyOnceWith('access-token', 'refresh-token', accessTokenRedisData, {
 			_id: accessTokenRedisData._id

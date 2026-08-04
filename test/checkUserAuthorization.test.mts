@@ -33,7 +33,7 @@ describe('checkUserAuthorization', () => {
 		expect(checkUserAuthorizationDisDel).not.toHaveBeenCalled()
 	})
 
-	it('propagates the gate rejection for a disabled or deleted imprenditore', async () => {
+	it('propagates the gate rejection for a disabled or deleted shopOwner', async () => {
 		compareHashAsync.mockResolvedValueOnce(true)
 		checkUserAuthorizationDisDel.mockImplementationOnce(() => {
 			throw new Error('disabled')

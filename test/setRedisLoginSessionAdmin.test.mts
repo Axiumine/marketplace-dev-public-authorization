@@ -9,7 +9,7 @@ const { setRedisLoginSessionAdmin } = await import('../src/lib/db/redis/setRedis
 describe('setRedisLoginSessionAdmin', () => {
 	beforeEach(() => setRedisLoginSession.mockReset())
 
-	// Same split as the imprenditore tier — only the _id survives on the refresh key — but the
+	// Same split as the shopOwner tier — only the _id survives on the refresh key — but the
 	// admin payload has no onboarding data to carry.
 	it('stores the full payload on the access key and only the _id on the refresh key', async () => {
 		const accessTokenRedisData = { _id: '507f1f77bcf86cd799439011', email: 'operator@marketplace.test' }

@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const ACCESS = 'access-token'
 const REFRESH = 'refresh-token'
 
-const tryLoginImprenditore = vi.fn()
+const tryLoginShopOwner = vi.fn()
 const updateLoginStats = vi.fn()
-const setRedisLoginSessionImprenditore = vi.fn()
+const setRedisLoginSessionShopOwner = vi.fn()
 const setLoginCookies = vi.fn()
 const makeOnboardingData = vi.fn()
 const captureException = vi.fn()
@@ -29,9 +29,9 @@ vi.mock('mongoose', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('mongoose')>()
 	return { ...actual, default: { ...actual.default, startSession } }
 })
-vi.mock('@lib/db/login/tryLoginImprenditore.mjs', () => ({ tryLoginImprenditore }))
+vi.mock('@lib/db/login/tryLoginShopOwner.mjs', () => ({ tryLoginShopOwner }))
 vi.mock('@lib/db/login/updateLoginStats.mjs', () => ({ updateLoginStats }))
-vi.mock('@lib/db/redis/setRedisLoginSessionImprenditore.mjs', () => ({ setRedisLoginSessionImprenditore }))
+vi.mock('@lib/db/redis/setRedisLoginSessionShopOwner.mjs', () => ({ setRedisLoginSessionShopOwner }))
 vi.mock('@axiumine/koa-utils/lib/setLoginCookies', () => ({ setLoginCookies }))
 vi.mock('@axiumine/koa-utils/lib/makeOnboardingData', () => ({ makeOnboardingData }))
 vi.mock('@axiumine/koa-utils/lib/tokens', () => ({
@@ -50,9 +50,9 @@ let log: ReturnType<typeof vi.spyOn>
 
 describe('login', () => {
 	beforeEach(() => {
-		tryLoginImprenditore.mockReset()
+		tryLoginShopOwner.mockReset()
 		updateLoginStats.mockReset().mockResolvedValue(undefined)
-		setRedisLoginSessionImprenditore.mockReset().mockResolvedValue(undefined)
+		setRedisLoginSessionShopOwner.mockReset().mockResolvedValue(undefined)
 		setLoginCookies.mockReset()
 		makeOnboardingData.mockReset()
 		captureException.mockReset()
@@ -65,16 +65,16 @@ describe('login', () => {
 
 	it('opens a session, stores the Redis session, updates the stats and sets the refresh cookie', async () => {
 		const lastLogin = new Date('2026-01-01T00:00:00.000Z')
-		tryLoginImprenditore.mockResolvedValueOnce({ _id, login: { lastLogin, onboardingDone: true } })
-		makeOnboardingData.mockReturnValueOnce('anagrafica')
+		tryLoginShopOwner.mockResolvedValueOnce({ _id, login: { lastLogin, onboardingDone: true } })
+		makeOnboardingData.mockReturnValueOnce('personalData')
 
 		const result = await login.resolve(null, args, ctx)
 
-		expect(tryLoginImprenditore).toHaveBeenCalledExactlyOnceWith(args.email, args.password, { withTransaction, endSession })
-		expect(setRedisLoginSessionImprenditore).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
+		expect(tryLoginShopOwner).toHaveBeenCalledExactlyOnceWith(args.email, args.password, { withTransaction, endSession })
+		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
 			_id: _id.toString(),
 			email: args.email,
-			onboardingStep: 'anagrafica'
+			onboardingStep: 'personalData'
 		})
 		expect(updateLoginStats).toHaveBeenCalledExactlyOnceWith(_id, lastLogin, true, { withTransaction, endSession })
 		expect(setLoginCookies).toHaveBeenCalledExactlyOnceWith(ctx, REFRESH)
@@ -86,15 +86,15 @@ describe('login', () => {
 		expect(result).toEqual({ onboardingStep: '', onboardingDone: false, accessToken: ACCESS })
 	})
 
-	// makeOnboardingData returns null for an imprenditore that never finished onboarding; the key
+	// makeOnboardingData returns null for an shopOwner that never finished onboarding; the key
 	// must then be absent from the Redis hash, not present and empty.
 	it('omits onboardingStep from the Redis payload and passes a null lastLogin on the first login', async () => {
-		tryLoginImprenditore.mockResolvedValueOnce({ _id, login: {} })
+		tryLoginShopOwner.mockResolvedValueOnce({ _id, login: {} })
 		makeOnboardingData.mockReturnValueOnce(null)
 
 		await login.resolve(null, args, ctx)
 
-		expect(setRedisLoginSessionImprenditore).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
+		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
 			_id: _id.toString(),
 			email: args.email
 		})
@@ -103,7 +103,7 @@ describe('login', () => {
 
 	it('closes the session and rethrows as an internal error when the transaction fails', async () => {
 		const error = new Error('mongo down')
-		tryLoginImprenditore.mockRejectedValueOnce(error)
+		tryLoginShopOwner.mockRejectedValueOnce(error)
 
 		await expect(login.resolve(null, args, ctx)).rejects.toThrow('Internal Server Error')
 

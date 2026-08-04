@@ -1,14 +1,14 @@
 import { setRedisLoginSession } from '@lib/db/redis/setRedisLoginSession.mjs'
 import { IRefreshData } from '@thedoctorweb_agency/marketplace-common/others/IRefreshData'
-import { IRedisDataImprenditore } from '@thedoctorweb_agency/marketplace-common/others/Redis/IRedisDataImprenditore'
+import { IRedisDataShopOwner } from '@thedoctorweb_agency/marketplace-common/others/Redis/IRedisDataShopOwner'
 import * as dotenv from 'dotenv'
 
 dotenv.config()
 
-export async function setRedisLoginSessionImprenditore(
+export async function setRedisLoginSessionShopOwner(
 	accessToken: string,
 	refreshToken: string,
-	accessTokenRedisData: IRedisDataImprenditore
+	accessTokenRedisData: IRedisDataShopOwner
 ) {
 	const refreshTokenData: IRefreshData = { _id: accessTokenRedisData._id }
 

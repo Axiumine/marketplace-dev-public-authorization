@@ -60,7 +60,7 @@ describe('loginAdmin', () => {
 	})
 	afterEach(() => log.mockRestore())
 
-	// No onboarding here, unlike the imprenditore tier: an Admin is created by the platform
+	// No onboarding here, unlike the shopOwner tier: an Admin is created by the platform
 	// operator and is done by definition, so the response pins onboardingDone to true.
 	it('opens a session, stores the Redis session, updates the stats and sets the refresh cookie', async () => {
 		const lastLogin = new Date('2026-01-01T00:00:00.000Z')

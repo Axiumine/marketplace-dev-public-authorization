@@ -44,7 +44,7 @@ export const loginAdmin = {
 
 		try {
 			await session.withTransaction(async () => {
-				// @fixme checkUserLoginAuthorization di koa che controlla tutti i reqirements, che viene fatta dopo sotto
+				// @fixme koa's checkUserLoginAuthorization checks every requirement, and it runs further down
 
 				const admin = await tryLoginAdmin(email, password, session)
 

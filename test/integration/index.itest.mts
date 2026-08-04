@@ -57,7 +57,7 @@ async function gql(query: string, variables?: Record<string, unknown>) {
  * tracked the same way, so a failing assertion still cannot leave one on the cluster.
  ****************************************************************************************/
 
-const seededDocs: Array<{ collection: 'admin' | 'imprenditore'; _id: mongoose.Types.ObjectId }> = []
+const seededDocs: Array<{ collection: 'admin' | 'shopOwner'; _id: mongoose.Types.ObjectId }> = []
 const seededKeys: string[] = []
 
 /** The raw driver handle — only defined once start() has connected. */
@@ -80,41 +80,41 @@ function track(key: string) {
  * Inserted with the raw driver rather than the Mongoose model, the platform seeding convention:
  * the insert is then shaped by the collection's own `$jsonSchema` and by nothing else, so a seed
  * cannot inherit whatever the model happens to believe today. That is not hypothetical — the model
- * used to spell `anagrafica.nascita.data` as `date` and carry no `contatti` path at all, both of
+ * used to spell `personalData.birth.date` as `date` and carry no `contacts` path at all, both of
  * which the validator refuses under `additionalProperties: false`, so a model write failed outright
  * (fixed in marketplace-common 1.17.0). The raw path was never affected, and will not be by the next
  * drift either.
  *
  * `login` merges into the `login` sub-document (email/password/firstLogin/lastLogin/onboarding…).
  * `extra` merges at the document root — that is where the validator puts `disabled`, `deleted`
- * and `waitApprov` (see marketplace-db-setup's create-imprenditore migration), so a gate test needs
+ * and `waitApprov` (see marketplace-db-setup's create-shopOwner migration), so a gate test needs
  * this second bucket rather than nesting those fields under `login`.
  */
-async function seedImprenditore(login: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
+async function seedShopOwner(login: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
 	const email = itestEmail()
 	const _id = new mongoose.Types.ObjectId()
 
 	await db()
-		.collection('imprenditore')
+		.collection('shopOwner')
 		.insertOne({
 			_id,
 			login: { email, password: passwordHash, ...login },
-			anagrafica: {
-				nome: 'Itest',
-				cognome: 'Imprenditore',
-				nascita: { data: new Date('1980-01-01T00:00:00Z') },
-				indirizzo: { indirizzo: 'Via Test 1', cap: '24031', comune: 'Almenno San Salvatore', provincia: 'BG' },
-				contatti: { cellulare: '3900000000', email }
+			personalData: {
+				firstName: 'Itest',
+				lastName: 'ShopOwner',
+				birth: { date: new Date('1980-01-01T00:00:00Z') },
+				address: { street: 'Via Test 1', postalCode: '24031', city: 'Almenno San Salvatore', province: 'BG' },
+				contacts: { mobile: '3900000000', email }
 			},
-			iscrizione: new Date(),
+			registeredAt: new Date(),
 			...extra
 		})
-	seededDocs.push({ collection: 'imprenditore', _id })
+	seededDocs.push({ collection: 'shopOwner', _id })
 
 	return { _id, email }
 }
 
-/** Same two-bucket shape as seedImprenditore — `extra` for the root-level `disabled`/`deleted`. */
+/** Same two-bucket shape as seedShopOwner — `extra` for the root-level `disabled`/`deleted`. */
 async function seedAdmin(login: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
 	const email = itestEmail()
 	const _id = new mongoose.Types.ObjectId()
@@ -124,7 +124,7 @@ async function seedAdmin(login: Record<string, unknown> = {}, extra: Record<stri
 		.insertOne({
 			_id,
 			login: { email, password: passwordHash, ...login },
-			anagrafica: { nome: 'Itest', cognome: 'Admin' },
+			personalData: { firstName: 'Itest', lastName: 'Admin' },
 			...extra
 		})
 	seededDocs.push({ collection: 'admin', _id })
@@ -232,7 +232,7 @@ describe('GraphQL over HTTP', () => {
 })
 
 // The one request that drives both datasources end to end: the resolver opens a Mongo session,
-// reads the imprenditore/admin collection and finds nothing. No document is ever written.
+// reads the shopOwner/admin collection and finds nothing. No document is ever written.
 describe('login against the real MongoDB', () => {
 	const mutation = `
 		mutation Login($email: String!, $password: String!) {
@@ -246,7 +246,7 @@ describe('login against the real MongoDB', () => {
 	`
 	const credentials = { email: `nobody-${randomUUID()}@marketplace.test`, password: 'not-a-password' }
 
-	it('refuses an unknown imprenditore', async () => {
+	it('refuses an unknown shopOwner', async () => {
 		const { json } = await gql(mutation, credentials)
 
 		expect(json.data?.login ?? null).toBeNull()
@@ -265,7 +265,7 @@ describe('login against the real MongoDB', () => {
  * The half of a login assertion that is the same on both tiers: a non-empty access token, an access
  * hash holding exactly `_id` + `email`, a refresh hash holding only the `_id`, and two TTLs armed
  * *after* their fields — the ordering the source comment warns about, since a key whose TTL was set
- * first would read -1 here. Exact equality on both hashes is the point: an `imprenditore` gets no
+ * first would read -1 here. Exact equality on both hashes is the point: an `shopOwner` gets no
  * `onboardingStep` while `makeOnboardingData` returns null, and `IRedisDataAdmin` has no onboarding
  * fields at all, so either tier writing a third key would fail this.
  *
@@ -299,27 +299,27 @@ describe('login writes a real session on the cluster', () => {
 	`
 
 	it('stores both hashes, arms both TTLs, and stamps the login counters', async () => {
-		const { _id, email } = await seedImprenditore()
+		const { _id, email } = await seedShopOwner()
 
 		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: false })
 		expect(json.errors).toBeUndefined()
 
 		const { accessToken } = json.data?.login as { accessToken: string }
 
-		// setRedisLoginSessionImprenditore writes the whole IRedisDataImprenditore into the access
+		// setRedisLoginSessionShopOwner writes the whole IRedisDataShopOwner into the access
 		// hash and only the _id into the refresh one.
 		await expectSessionOnCluster(accessToken, setCookie, _id, email)
 
 		// updateLoginStats ran in the same transaction, which therefore really committed.
 		// rememberMe: false takes the $unset branch, so the field must not be there at all.
-		const doc = await db().collection('imprenditore').findOne({ _id })
+		const doc = await db().collection('shopOwner').findOne({ _id })
 		expect(doc?.login.lastLogin).toBeInstanceOf(Date)
 		expect(doc?.login.firstLogin).toBeInstanceOf(Date)
 		expect(doc?.login.rememberMe).toBeUndefined()
 	})
 
 	it('carries onboardingStep into the access hash once onboarding is done', async () => {
-		const { _id, email } = await seedImprenditore({ onboardingDone: true, onboardingStep: 'p3' })
+		const { _id, email } = await seedShopOwner({ onboardingDone: true, onboardingStep: 'p3' })
 
 		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: true })
 		expect(json.errors).toBeUndefined()
@@ -331,12 +331,12 @@ describe('login writes a real session on the cluster', () => {
 		expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email, onboardingStep: 'p3' })
 
 		// rememberMe: true takes the $set branch instead.
-		const doc = await db().collection('imprenditore').findOne({ _id })
+		const doc = await db().collection('shopOwner').findOne({ _id })
 		expect(doc?.login.rememberMe).toBe(true)
 	})
 
-	it('refuses a seeded imprenditore whose password does not match', async () => {
-		const { email } = await seedImprenditore()
+	it('refuses a seeded shopOwner whose password does not match', async () => {
+		const { email } = await seedShopOwner()
 
 		const { json } = await gql(mutation, { email, password: 'not-the-password', rememberMe: false })
 
@@ -349,15 +349,15 @@ describe('login writes a real session on the cluster', () => {
 // each seed below uses the real correct password — only the real disabled/deleted gate can be what
 // refuses the request. A mocked model would just prove the gate function was called with some object;
 // only a real document read back through the real projection proves the field really reached it.
-describe('login refuses a disabled or deleted imprenditore, even with the correct password', () => {
+describe('login refuses a disabled or deleted shopOwner, even with the correct password', () => {
 	const mutation = `
 		mutation Login($email: String!, $password: String!) {
 			login(email: $email, password: $password, rememberMe: false) { accessToken }
 		}
 	`
 
-	it('refuses a disabled imprenditore', async () => {
-		const { email } = await seedImprenditore({}, { disabled: true })
+	it('refuses a disabled shopOwner', async () => {
+		const { email } = await seedShopOwner({}, { disabled: true })
 
 		const { json } = await gql(mutation, { email, password: PASSWORD })
 
@@ -365,8 +365,8 @@ describe('login refuses a disabled or deleted imprenditore, even with the correc
 		expect(json.errors?.[0].message).toBe('Unauthorized')
 	})
 
-	it('refuses a deleted imprenditore', async () => {
-		const { email } = await seedImprenditore({}, { deleted: new Date() })
+	it('refuses a deleted shopOwner', async () => {
+		const { email } = await seedShopOwner({}, { deleted: new Date() })
 
 		const { json } = await gql(mutation, { email, password: PASSWORD })
 
@@ -390,7 +390,7 @@ describe('login on a repeat visit (funUpdateLoginStats "not the first login" bra
 	it('leaves firstLogin untouched, refreshes lastLogin, and sets rememberMe', async () => {
 		const firstLogin = new Date('2026-01-01T00:00:00.000Z')
 		const priorLastLogin = new Date('2026-02-01T00:00:00.000Z')
-		const { _id, email } = await seedImprenditore({ firstLogin, lastLogin: priorLastLogin })
+		const { _id, email } = await seedShopOwner({ firstLogin, lastLogin: priorLastLogin })
 
 		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: true })
 		// `login` mints a refresh session server-side with the 90-day REFRESH_TOKEN_EXPIRY. This test
@@ -402,7 +402,7 @@ describe('login on a repeat visit (funUpdateLoginStats "not the first login" bra
 		const { accessToken } = json.data?.login as { accessToken: string }
 		track(`${REDIS_KEY}access:${accessToken}`)
 
-		const doc = await db().collection('imprenditore').findOne({ _id })
+		const doc = await db().collection('shopOwner').findOne({ _id })
 		// The $set only touches firstLogin when lastLogin was null on entry — it was not here, so
 		// the original timestamp must survive byte-for-byte.
 		expect(doc?.login.firstLogin).toEqual(firstLogin)
@@ -452,7 +452,7 @@ describe('loginAdmin writes a real session on the cluster', () => {
  * checkAdminAuthorization.mts used to compare the password hash and stop there. tryLoginAdmin's
  * projection ('_id disabled deleted login.password login.lastLogin') already fetched `disabled` and
  * `deleted` off the real document, and IAdminLoginCheckData already extended the same
- * IAuthorizationDisDel the imprenditore path gates on — but nothing ever read them back, so a
+ * IAuthorizationDisDel the shopOwner path gates on — but nothing ever read them back, so a
  * suspended or deleted PLATFORM OPERATOR (the highest-privilege tier) kept logging in with the right
  * password. Found by seeding a disabled admin and driving it over real HTTP/Mongo, not by inspection.
  *
@@ -498,9 +498,9 @@ describe('loginAdmin refuses a disabled or deleted admin, even with the correct 
 	})
 })
 
-// Same "not the first login" gap as the imprenditore suite above, exercised for Admin: funUpdateLoginStats
+// Same "not the first login" gap as the shopOwner suite above, exercised for Admin: funUpdateLoginStats
 // is the shared function (see funUpdateLoginStats.mts), but the admin login tests so far only ever seed a
-// document with no `login.lastLogin`, so only the imprenditore describe block above had reached the
+// document with no `login.lastLogin`, so only the shopOwner describe block above had reached the
 // `else` arm. This also covers rememberMe: true for Admin, which the other admin test hardcodes to false.
 describe('loginAdmin on a repeat visit (funUpdateLoginStats "not the first login" branch)', () => {
 	const mutation = `

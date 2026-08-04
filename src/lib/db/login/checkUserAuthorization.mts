@@ -4,20 +4,20 @@ import { IAuthorizationDisDel } from '@axiumine/koa-utils/lib/IAuthorizationDisD
 import { checkUserAuthorizationDisDel } from '@thedoctorweb_agency/marketplace-common/others/checkUserAuthorizationDisDel'
 
 /**
- * viene chiamata quando l'email dell'utente è stata trovato nel database
+ * called once the account email has been found in the database
  *
  * @param user
  * @param pwd1
  * @param pwd2
  */
 export async function checkUserAuthorization(user: IAuthorizationDisDel, pwd1: string, pwd2: string) {
-	// utente è nella collection degli utenti network o virali
+	// the account is in the shopOwner collection
 	//console.log('compare pass 1')
 	const ret = await compareHashAsync(pwd1, pwd2)
 	//console.log('compare pass 2')
 
 	if (!ret) {
-		throw throwUnauthorizedError() //@fixme email con loginErrorMsg:  anche se fosse utente virale, la password è la stessa.
+		throw throwUnauthorizedError() //@fixme email carrying loginErrorMsg: the password is the same either way.
 	}
 
 	checkUserAuthorizationDisDel(user)

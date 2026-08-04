@@ -3,7 +3,7 @@ import { ILoginUnset } from '@axiumine/koa-utils/lib/db/login/ILoginUnset'
 import { ClientSession, Model, Types } from 'mongoose'
 
 /**
- * Stamps the login counters on whichever tier just authenticated. Imprenditore and Admin keep
+ * Stamps the login counters on whichever tier just authenticated. ShopOwner and Admin keep
  * the very same `login` sub-document, so the two callers differ only by collection — passing
  * the model in keeps one copy of the update.
  */

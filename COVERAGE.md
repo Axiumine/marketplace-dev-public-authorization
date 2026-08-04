@@ -71,7 +71,7 @@ request in the integration suite is therefore credential-free — no cookie, no 
 no `x-introspectioncode`.
 
 Both datasources are opened (`Promise.all([MongoDBConnect(), RedisConnect()])`): the login
-resolvers read `imprenditore` / `admin` from MongoDB inside a transaction and then write the
+resolvers read `shopOwner` / `admin` from MongoDB inside a transaction and then write the
 session to Redis. `MONGODB_URI` is consequently part of `REQUIRED_ENV_VARS` here, unlike in
 the two authorization services.
 
@@ -87,7 +87,7 @@ talked to both, not that a mock returned the expected value.
 
 **The integration suite never writes to MongoDB.** It seeds and deletes its own Redis keys inside
 the isolated namespace, and reaches MongoDB only through reads that are expected to miss (a login
-with a random address that matches no `imprenditore` and no `admin`, asserted to answer
+with a random address that matches no `shopOwner` and no `admin`, asserted to answer
 `Unauthorized`). Seeding a real account would mean writing to the dev database, satisfying its
 full `$jsonSchema` validator and storing a bcrypt hash; the happy path of both login resolvers is
 covered by the unit project instead.

@@ -44,7 +44,7 @@ describe('checkRequiredEnv', () => {
 		expect(() => checkRequiredEnv({})).toThrow(`Missing required environment variable: ${REQUIRED_ENV_VARS[0]}`)
 	})
 
-	// This tier reaches MongoDB directly (the login resolvers read imprenditore/admin), so unlike
+	// This tier reaches MongoDB directly (the login resolvers read shopOwner/admin), so unlike
 	// the authorization services MONGODB_URI is part of the boot contract.
 	it('requires MONGODB_URI', () => {
 		expect(REQUIRED_ENV_VARS).toContain('MONGODB_URI')

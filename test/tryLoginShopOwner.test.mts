@@ -7,10 +7,10 @@ const sessionFn = vi.fn(() => ({ lean }))
 const findOne = vi.fn(() => ({ session: sessionFn }))
 const checkUserAuthorization = vi.fn()
 
-vi.mock('@thedoctorweb_agency/marketplace-common/models/MongoDB/Imprenditore', () => ({ Imprenditore: { findOne } }))
+vi.mock('@thedoctorweb_agency/marketplace-common/models/MongoDB/ShopOwner', () => ({ ShopOwner: { findOne } }))
 vi.mock('@lib/db/login/checkUserAuthorization.mjs', () => ({ checkUserAuthorization }))
 
-const { tryLoginImprenditore } = await import('../src/lib/db/login/tryLoginImprenditore.mts')
+const { tryLoginShopOwner } = await import('../src/lib/db/login/tryLoginShopOwner.mts')
 
 const session = { id: 'session' } as unknown as ClientSession
 const user = {
@@ -18,7 +18,7 @@ const user = {
 	login: { password: 'stored-hash', onboardingDone: true, onboardingStep: 'fine' }
 }
 
-describe('tryLoginImprenditore', () => {
+describe('tryLoginShopOwner', () => {
 	beforeEach(() => {
 		lean.mockReset()
 		sessionFn.mockClear()
@@ -26,10 +26,10 @@ describe('tryLoginImprenditore', () => {
 		checkUserAuthorization.mockReset()
 	})
 
-	it('returns the lean imprenditore after the password check, inside the caller session', async () => {
+	it('returns the lean shopOwner after the password check, inside the caller session', async () => {
 		lean.mockResolvedValueOnce(user)
 
-		await expect(tryLoginImprenditore('shop@marketplace.test', 'clear', session)).resolves.toBe(user)
+		await expect(tryLoginShopOwner('shop@marketplace.test', 'clear', session)).resolves.toBe(user)
 
 		// The projection is part of the contract: login reads login.lastLogin and the onboarding
 		// fields off the result, the password check needs login.password, and the disabled/deleted
@@ -43,10 +43,10 @@ describe('tryLoginImprenditore', () => {
 		expect(checkUserAuthorization).toHaveBeenCalledExactlyOnceWith(user, 'clear', 'stored-hash')
 	})
 
-	it('rejects with Unauthorized when the email matches no imprenditore', async () => {
+	it('rejects with Unauthorized when the email matches no shopOwner', async () => {
 		lean.mockResolvedValueOnce(null)
 
-		await expect(tryLoginImprenditore('nobody@marketplace.test', 'clear', session)).rejects.toThrow('Unauthorized')
+		await expect(tryLoginShopOwner('nobody@marketplace.test', 'clear', session)).rejects.toThrow('Unauthorized')
 		expect(checkUserAuthorization).not.toHaveBeenCalled()
 	})
 
@@ -54,6 +54,6 @@ describe('tryLoginImprenditore', () => {
 		lean.mockResolvedValueOnce(user)
 		checkUserAuthorization.mockRejectedValueOnce(new Error('Unauthorized'))
 
-		await expect(tryLoginImprenditore('shop@marketplace.test', 'wrong', session)).rejects.toThrow('Unauthorized')
+		await expect(tryLoginShopOwner('shop@marketplace.test', 'wrong', session)).rejects.toThrow('Unauthorized')
 	})
 })

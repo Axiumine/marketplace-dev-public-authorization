@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 
-export interface IImprenditoreLoginCheckData {
+export interface IShopOwnerLoginCheckData {
 	_id: Types.ObjectId
 	login: {
 		password: string
