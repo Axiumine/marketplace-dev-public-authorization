@@ -1,0 +1,579 @@
+import { randomUUID } from 'node:crypto'
+import type { AddressInfo } from 'node:net'
+
+import { redisClient } from '@axiumine/koa-utils/dataSources/Redis'
+import { REFRESH_TOKEN_EXPIRY } from '@axiumine/koa-utils/lib/tokens'
+import bcrypt from '@node-rs/bcrypt'
+import type { Server } from 'http'
+import mongoose from 'mongoose'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
+import { ENDPOINT, start } from '../../src/index.mts'
+import { setRedisLoginSession } from '../../src/lib/db/redis/setRedisLoginSession.mts'
+
+const REDIS_KEY = process.env.REDIS_KEY as string
+
+// accessTokenExpiry() returns floor((random() * 61 + 30) * 60) — a random 30-to-91-minute
+// window — so the access TTL can only be asserted as a range. REFRESH_TOKEN_EXPIRY is fixed.
+const ACCESS_TTL_MIN = 1800
+const ACCESS_TTL_MAX = 5459
+
+// One bcrypt hash is shared by every seeded document; at 14 rounds it costs seconds. The
+// rounds mirror marketplace-common's SALT_ROUNDS, which its exports map does not expose.
+const PASSWORD = 'Itest!Pwd2026'
+const SALT_ROUNDS = 14
+let passwordHash: string
+
+let httpServer: Server
+let base: string
+
+/** POST a GraphQL document to the real endpoint and return status + parsed body. */
+async function gql(query: string, variables?: Record<string, unknown>) {
+	const res = await fetch(`${base}${ENDPOINT}`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ query, variables })
+	})
+
+	return {
+		status: res.status,
+		// setLoginCookies emits refresh_token + its Keygrip .sig; the session tests below read the
+		// token back out of here, because it is never returned in the GraphQL payload.
+		setCookie: res.headers.getSetCookie(),
+		// tdwKoaErrorHandler answers rejected requests with {message, description}; Apollo answers
+		// accepted ones with {data, errors}. One parse covers both shapes.
+		json: (await res.json()) as {
+			data?: Record<string, unknown>
+			errors?: Array<{ message: string }>
+			message?: string
+			description?: string
+		}
+	}
+}
+
+/****************************************************************************************
+ * Seeds. Everything below writes to the real dev database, so every document carries an
+ * `itest-…@marketplace.invalid` address and is deleted again in afterAll. Session keys are
+ * tracked the same way, so a failing assertion still cannot leave one on the cluster.
+ ****************************************************************************************/
+
+const seededDocs: Array<{ collection: 'admin' | 'imprenditore'; _id: mongoose.Types.ObjectId }> = []
+const seededKeys: string[] = []
+
+/** The raw driver handle — only defined once start() has connected. */
+function db() {
+	return mongoose.connection.db!
+}
+
+function itestEmail() {
+	return `itest-${randomUUID()}@marketplace.invalid`
+}
+
+/** Remember a session key so afterAll removes it even if the test that created it fails. */
+function track(key: string) {
+	seededKeys.push(key)
+
+	return key
+}
+
+/**
+ * Inserted with the raw driver rather than the Mongoose model, the platform seeding convention:
+ * the insert is then shaped by the collection's own `$jsonSchema` and by nothing else, so a seed
+ * cannot inherit whatever the model happens to believe today. That is not hypothetical — the model
+ * used to spell `anagrafica.nascita.data` as `date` and carry no `contatti` path at all, both of
+ * which the validator refuses under `additionalProperties: false`, so a model write failed outright
+ * (fixed in marketplace-common 1.17.0). The raw path was never affected, and will not be by the next
+ * drift either.
+ *
+ * `login` merges into the `login` sub-document (email/password/firstLogin/lastLogin/onboarding…).
+ * `extra` merges at the document root — that is where the validator puts `disabled`, `deleted`
+ * and `waitApprov` (see marketplace-db-setup's create-imprenditore migration), so a gate test needs
+ * this second bucket rather than nesting those fields under `login`.
+ */
+async function seedImprenditore(login: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
+	const email = itestEmail()
+	const _id = new mongoose.Types.ObjectId()
+
+	await db()
+		.collection('imprenditore')
+		.insertOne({
+			_id,
+			login: { email, password: passwordHash, ...login },
+			anagrafica: {
+				nome: 'Itest',
+				cognome: 'Imprenditore',
+				nascita: { data: new Date('1980-01-01T00:00:00Z') },
+				indirizzo: { indirizzo: 'Via Test 1', cap: '24031', comune: 'Almenno San Salvatore', provincia: 'BG' },
+				contatti: { cellulare: '3900000000', email }
+			},
+			iscrizione: new Date(),
+			...extra
+		})
+	seededDocs.push({ collection: 'imprenditore', _id })
+
+	return { _id, email }
+}
+
+/** Same two-bucket shape as seedImprenditore — `extra` for the root-level `disabled`/`deleted`. */
+async function seedAdmin(login: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
+	const email = itestEmail()
+	const _id = new mongoose.Types.ObjectId()
+
+	await db()
+		.collection('admin')
+		.insertOne({
+			_id,
+			login: { email, password: passwordHash, ...login },
+			anagrafica: { nome: 'Itest', cognome: 'Admin' },
+			...extra
+		})
+	seededDocs.push({ collection: 'admin', _id })
+
+	return { _id, email }
+}
+
+/** The refresh token Koa just set, read back out of the Set-Cookie headers. */
+function refreshTokenFrom(setCookie: string[]) {
+	const header = setCookie.find((cookie) => cookie.startsWith('refresh_token='))
+	if (!header) throw new Error('login did not set a refresh_token cookie')
+
+	return header.slice('refresh_token='.length).split(';')[0]
+}
+
+beforeAll(async () => {
+	const server = await start()
+	if (!server) throw new Error('server failed to start against the real Redis cluster / MongoDB')
+	httpServer = server.httpServer
+	const address = httpServer.address() as AddressInfo | null
+	if (!address || typeof address === 'string') throw new Error('no TCP address on the booted server')
+	base = `http://127.0.0.1:${address.port}`
+
+	passwordHash = await bcrypt.hash(PASSWORD, SALT_ROUNDS)
+})
+
+/**
+ * Cleanup must never abort halfway. `afterAll` drains MongoDB first and Redis second, so a single
+ * failed delete — a cluster MOVED mid-resharding, a handle closed early — would otherwise strand
+ * every id and key registered after it, and would skip the Redis drain entirely. Mongo residue is
+ * harmless, globalSetup drops and re-migrates the database on the next run; a stranded Redis key
+ * sits in the cluster for its whole TTL, which for a refresh session is 90 days.
+ */
+async function drainSafely(what: string, remove: () => Promise<unknown>) {
+	try {
+		await remove()
+	} catch (error) {
+		console.error(`[afterAll] cleanup failed for ${what}:`, error)
+	}
+}
+
+afterAll(async () => {
+	// Drop whatever this run created while the handles are still open: documents first, then
+	// any session key. One del per key — this is a cluster, so a multi-key del would CROSSSLOT.
+	for (const { collection, _id } of seededDocs) {
+		await drainSafely(`${collection} ${_id.toString()}`, () => db().collection(collection).deleteOne({ _id }))
+	}
+	for (const key of seededKeys) {
+		await drainSafely(key, () => redisClient.del(key))
+	}
+
+	await new Promise<void>((resolve) => httpServer.close(() => resolve()))
+	await redisClient.close()
+	await mongoose.disconnect()
+})
+
+describe('public-authorization service (integration, real MongoDB + real Redis cluster)', () => {
+	// start() is what wires both datasources; asserting the live handles is what makes the rest of
+	// this file an integration suite rather than an in-process schema test.
+	it('has a live MongoDB connection', () => {
+		expect(mongoose.connection.readyState).toBe(1)
+	})
+
+	it('has a live Redis cluster connection, round-tripping a key in the isolated namespace', async () => {
+		const key = `${REDIS_KEY}ping:${randomUUID()}`
+
+		// EX so this one cannot outlive the run. It is never registered for the afterAll drain, so
+		// without a TTL a hard kill — or a throw on the assertion below — strands it on the cluster
+		// forever. 60s is far longer than the round trip and short enough to be self-cleaning.
+		await redisClient.set(key, 'pong', { EX: 60 })
+		expect(await redisClient.get(key)).toBe('pong')
+
+		await redisClient.del(key)
+		expect(await redisClient.get(key)).toBeNull()
+	})
+})
+
+// This is the public tier: no cookie, no bearer token, no introspection code. Every request below
+// is anonymous on purpose — login/loginAdmin are exactly what an unauthenticated caller must reach.
+describe('GraphQL over HTTP', () => {
+	it('serves the query without any credential', async () => {
+		const { status, json } = await gql('{ authPublicHello { txt } }')
+
+		expect(status).toBe(200)
+		expect(json.errors).toBeUndefined()
+		expect(json.data).toEqual({ authPublicHello: { txt: 'Hello from authPublicHello' } })
+	})
+
+	// Introspection stays open outside production (buildValidationRules returns no rules), and the
+	// schema it reports is the one really assembled in createServer — not a copy rebuilt by a test.
+	it('exposes the assembled schema through introspection', async () => {
+		const { json } = await gql('{ __schema { queryType { name } mutationType { name } } }')
+
+		expect(json.errors).toBeUndefined()
+		expect(json.data).toEqual({
+			__schema: { queryType: { name: 'QueriesPublic' }, mutationType: { name: 'MutationsPublic' } }
+		})
+	})
+
+	it('rejects a GET on the GraphQL endpoint (csrfPrevention / method not allowed)', async () => {
+		const res = await fetch(`${base}${ENDPOINT}?query=%7B__typename%7D`)
+
+		expect(res.status).toBeGreaterThanOrEqual(400)
+	})
+})
+
+// The one request that drives both datasources end to end: the resolver opens a Mongo session,
+// reads the imprenditore/admin collection and finds nothing. No document is ever written.
+describe('login against the real MongoDB', () => {
+	const mutation = `
+		mutation Login($email: String!, $password: String!) {
+			login(email: $email, password: $password, rememberMe: false) { accessToken }
+		}
+	`
+	const mutationAdmin = `
+		mutation LoginAdmin($email: String!, $password: String!) {
+			loginAdmin(email: $email, password: $password, rememberMe: false) { accessToken }
+		}
+	`
+	const credentials = { email: `nobody-${randomUUID()}@marketplace.test`, password: 'not-a-password' }
+
+	it('refuses an unknown imprenditore', async () => {
+		const { json } = await gql(mutation, credentials)
+
+		expect(json.data?.login ?? null).toBeNull()
+		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+
+	it('refuses an unknown admin', async () => {
+		const { json } = await gql(mutationAdmin, credentials)
+
+		expect(json.data?.loginAdmin ?? null).toBeNull()
+		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+})
+
+/**
+ * The half of a login assertion that is the same on both tiers: a non-empty access token, an access
+ * hash holding exactly `_id` + `email`, a refresh hash holding only the `_id`, and two TTLs armed
+ * *after* their fields — the ordering the source comment warns about, since a key whose TTL was set
+ * first would read -1 here. Exact equality on both hashes is the point: an `imprenditore` gets no
+ * `onboardingStep` while `makeOnboardingData` returns null, and `IRedisDataAdmin` has no onboarding
+ * fields at all, so either tier writing a third key would fail this.
+ *
+ * Registers both keys for the `afterAll` drain and hands them back for whatever the caller checks next.
+ */
+async function expectSessionOnCluster(accessToken: string, setCookie: string[], _id: mongoose.Types.ObjectId, email: string) {
+	expect(accessToken).not.toBe('')
+
+	const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
+	const refreshKey = track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+
+	expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email })
+	expect(await redisClient.hGetAll(refreshKey)).toEqual({ _id: _id.toHexString() })
+
+	const accessTtl = await redisClient.ttl(accessKey)
+	expect(accessTtl).toBeGreaterThanOrEqual(ACCESS_TTL_MIN - 5)
+	expect(accessTtl).toBeLessThanOrEqual(ACCESS_TTL_MAX)
+	expect(await redisClient.ttl(refreshKey)).toBeGreaterThan(REFRESH_TOKEN_EXPIRY - 60)
+
+	return { accessKey, refreshKey }
+}
+
+// The login mutations are the only writers of a login session on the whole platform: every other
+// service reads back what these two put on the cluster. A mocked Redis proves the resolver called
+// hSet; only the live cluster proves the session another service will later find is really there.
+describe('login writes a real session on the cluster', () => {
+	const mutation = `
+		mutation Login($email: String!, $password: String!, $rememberMe: Boolean!) {
+			login(email: $email, password: $password, rememberMe: $rememberMe) { accessToken }
+		}
+	`
+
+	it('stores both hashes, arms both TTLs, and stamps the login counters', async () => {
+		const { _id, email } = await seedImprenditore()
+
+		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: false })
+		expect(json.errors).toBeUndefined()
+
+		const { accessToken } = json.data?.login as { accessToken: string }
+
+		// setRedisLoginSessionImprenditore writes the whole IRedisDataImprenditore into the access
+		// hash and only the _id into the refresh one.
+		await expectSessionOnCluster(accessToken, setCookie, _id, email)
+
+		// updateLoginStats ran in the same transaction, which therefore really committed.
+		// rememberMe: false takes the $unset branch, so the field must not be there at all.
+		const doc = await db().collection('imprenditore').findOne({ _id })
+		expect(doc?.login.lastLogin).toBeInstanceOf(Date)
+		expect(doc?.login.firstLogin).toBeInstanceOf(Date)
+		expect(doc?.login.rememberMe).toBeUndefined()
+	})
+
+	it('carries onboardingStep into the access hash once onboarding is done', async () => {
+		const { _id, email } = await seedImprenditore({ onboardingDone: true, onboardingStep: 'p3' })
+
+		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: true })
+		expect(json.errors).toBeUndefined()
+
+		const { accessToken } = json.data?.login as { accessToken: string }
+		const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
+		track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+
+		expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email, onboardingStep: 'p3' })
+
+		// rememberMe: true takes the $set branch instead.
+		const doc = await db().collection('imprenditore').findOne({ _id })
+		expect(doc?.login.rememberMe).toBe(true)
+	})
+
+	it('refuses a seeded imprenditore whose password does not match', async () => {
+		const { email } = await seedImprenditore()
+
+		const { json } = await gql(mutation, { email, password: 'not-the-password', rememberMe: false })
+
+		expect(json.data?.login ?? null).toBeNull()
+		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+})
+
+// checkUserAuthorizationDisDel runs AFTER the password compare (see checkUserAuthorization.mts), so
+// each seed below uses the real correct password — only the real disabled/deleted gate can be what
+// refuses the request. A mocked model would just prove the gate function was called with some object;
+// only a real document read back through the real projection proves the field really reached it.
+describe('login refuses a disabled or deleted imprenditore, even with the correct password', () => {
+	const mutation = `
+		mutation Login($email: String!, $password: String!) {
+			login(email: $email, password: $password, rememberMe: false) { accessToken }
+		}
+	`
+
+	it('refuses a disabled imprenditore', async () => {
+		const { email } = await seedImprenditore({}, { disabled: true })
+
+		const { json } = await gql(mutation, { email, password: PASSWORD })
+
+		expect(json.data?.login ?? null).toBeNull()
+		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+
+	it('refuses a deleted imprenditore', async () => {
+		const { email } = await seedImprenditore({}, { deleted: new Date() })
+
+		const { json } = await gql(mutation, { email, password: PASSWORD })
+
+		expect(json.data?.login ?? null).toBeNull()
+		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+})
+
+// funUpdateLoginStats branches on `lastLogin === null` (see its own comment): only the very first
+// login sets `login.firstLogin`; every login after that must leave it alone. Every seed above starts
+// from a document with no `login.lastLogin` at all, so those tests can only ever reach the "first
+// login" arm — this is the only test in the file that seeds a document which has ALREADY logged in
+// once, the one arrangement that can reach the `else` branch for real.
+describe('login on a repeat visit (funUpdateLoginStats "not the first login" branch)', () => {
+	const mutation = `
+		mutation Login($email: String!, $password: String!, $rememberMe: Boolean!) {
+			login(email: $email, password: $password, rememberMe: $rememberMe) { accessToken }
+		}
+	`
+
+	it('leaves firstLogin untouched, refreshes lastLogin, and sets rememberMe', async () => {
+		const firstLogin = new Date('2026-01-01T00:00:00.000Z')
+		const priorLastLogin = new Date('2026-02-01T00:00:00.000Z')
+		const { _id, email } = await seedImprenditore({ firstLogin, lastLogin: priorLastLogin })
+
+		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: true })
+		// `login` mints a refresh session server-side with the 90-day REFRESH_TOKEN_EXPIRY. This test
+		// only cares about the login timestamps, but the key exists all the same — register it here,
+		// before the assertions, or every run of this test strands one key in the cluster for 90 days.
+		track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+		expect(json.errors).toBeUndefined()
+
+		const { accessToken } = json.data?.login as { accessToken: string }
+		track(`${REDIS_KEY}access:${accessToken}`)
+
+		const doc = await db().collection('imprenditore').findOne({ _id })
+		// The $set only touches firstLogin when lastLogin was null on entry — it was not here, so
+		// the original timestamp must survive byte-for-byte.
+		expect(doc?.login.firstLogin).toEqual(firstLogin)
+		expect(doc?.login.lastLogin.getTime()).toBeGreaterThan(priorLastLogin.getTime())
+		expect(doc?.login.rememberMe).toBe(true)
+	})
+})
+
+describe('loginAdmin writes a real session on the cluster', () => {
+	const mutation = `
+		mutation LoginAdmin($email: String!, $password: String!) {
+			loginAdmin(email: $email, password: $password, rememberMe: false) { accessToken }
+		}
+	`
+
+	it('stores both hashes and arms both TTLs', async () => {
+		const { _id, email } = await seedAdmin()
+
+		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD })
+		expect(json.errors).toBeUndefined()
+
+		const { accessToken } = json.data?.loginAdmin as { accessToken: string }
+
+		await expectSessionOnCluster(accessToken, setCookie, _id, email)
+
+		const doc = await db().collection('admin').findOne({ _id })
+		expect(doc?.login.lastLogin).toBeInstanceOf(Date)
+		expect(doc?.login.firstLogin).toBeInstanceOf(Date)
+	})
+
+	// The "unknown admin" case above only exercises tryLoginAdmin's findOne-returns-null branch.
+	// This is the other branch a real seeded document can reach: the fetch succeeds and
+	// checkAdminAuthorization's own compareHashAsync rejection is what refuses the request.
+	it('refuses a seeded admin whose password does not match', async () => {
+		const { email } = await seedAdmin()
+
+		const { json } = await gql(mutation, { email, password: 'not-the-password' })
+
+		expect(json.data?.loginAdmin ?? null).toBeNull()
+		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+})
+
+/*
+ * Regression guard for a real privilege bug this suite caught.
+ *
+ * checkAdminAuthorization.mts used to compare the password hash and stop there. tryLoginAdmin's
+ * projection ('_id disabled deleted login.password login.lastLogin') already fetched `disabled` and
+ * `deleted` off the real document, and IAdminLoginCheckData already extended the same
+ * IAuthorizationDisDel the imprenditore path gates on — but nothing ever read them back, so a
+ * suspended or deleted PLATFORM OPERATOR (the highest-privilege tier) kept logging in with the right
+ * password. Found by seeding a disabled admin and driving it over real HTTP/Mongo, not by inspection.
+ *
+ * Both cases below use the real correct password on purpose: the gate runs after the compare, so a
+ * refusal here can only come from the disabled/deleted check itself. The Unauthorized message is
+ * identical to the unknown-email one, which is the point — the caller cannot tell the two apart.
+ */
+describe('loginAdmin refuses a disabled or deleted admin, even with the correct password', () => {
+	const mutation = `
+		mutation LoginAdmin($email: String!, $password: String!) {
+			loginAdmin(email: $email, password: $password, rememberMe: false) { accessToken }
+		}
+	`
+
+	it('refuses a disabled admin', async () => {
+		const { email } = await seedAdmin({}, { disabled: true })
+
+		const { json } = await gql(mutation, { email, password: PASSWORD })
+
+		expect(json.data?.loginAdmin ?? null).toBeNull()
+		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+
+	it('refuses a deleted admin', async () => {
+		const { email } = await seedAdmin({}, { deleted: new Date() })
+
+		const { json } = await gql(mutation, { email, password: PASSWORD })
+
+		expect(json.data?.loginAdmin ?? null).toBeNull()
+		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+
+	// The refusal must be total: no credential of any kind may survive it. The refresh cookie is
+	// written by the same resolver, after the gate — so its absence is the observable proof that
+	// nothing was minted. (Asserted through the response rather than by scanning Redis: the client
+	// is a cluster, where an unrouted KEYS scan is not a thing.)
+	it('sets no refresh cookie for a refused disabled admin', async () => {
+		const { email } = await seedAdmin({}, { disabled: true })
+
+		const { setCookie } = await gql(mutation, { email, password: PASSWORD })
+
+		expect(setCookie.find((cookie) => cookie.startsWith('refresh_token='))).toBeUndefined()
+	})
+})
+
+// Same "not the first login" gap as the imprenditore suite above, exercised for Admin: funUpdateLoginStats
+// is the shared function (see funUpdateLoginStats.mts), but the admin login tests so far only ever seed a
+// document with no `login.lastLogin`, so only the imprenditore describe block above had reached the
+// `else` arm. This also covers rememberMe: true for Admin, which the other admin test hardcodes to false.
+describe('loginAdmin on a repeat visit (funUpdateLoginStats "not the first login" branch)', () => {
+	const mutation = `
+		mutation LoginAdmin($email: String!, $password: String!, $rememberMe: Boolean!) {
+			loginAdmin(email: $email, password: $password, rememberMe: $rememberMe) { accessToken }
+		}
+	`
+
+	it('leaves firstLogin unset, refreshes lastLogin, and sets rememberMe', async () => {
+		const priorLastLogin = new Date('2026-02-01T00:00:00.000Z')
+		const { _id, email } = await seedAdmin({ lastLogin: priorLastLogin })
+
+		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: true })
+		// Same as the `login` counterpart above: the refresh session is minted whether or not this
+		// test looks at it, so it has to be tracked before the first assertion that can throw.
+		track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+		expect(json.errors).toBeUndefined()
+
+		const { accessToken } = json.data?.loginAdmin as { accessToken: string }
+		track(`${REDIS_KEY}access:${accessToken}`)
+
+		const doc = await db().collection('admin').findOne({ _id })
+		// lastLogin was already non-null on entry, so the `if (lastLogin === null)` branch that sets
+		// firstLogin must NOT run — the field stays absent, exactly as it started.
+		expect(doc?.login.firstLogin).toBeUndefined()
+		expect(doc?.login.lastLogin.getTime()).toBeGreaterThan(priorLastLogin.getTime())
+		expect(doc?.login.rememberMe).toBe(true)
+	})
+})
+
+describe('setRedisLoginSession against the live cluster', () => {
+	it('writes exactly the fields it is handed, on both keys', async () => {
+		const _id = new mongoose.Types.ObjectId().toHexString()
+		const accessToken = randomUUID()
+		const refreshToken = randomUUID()
+		const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
+		const refreshKey = track(`${REDIS_KEY}refresh:${refreshToken}`)
+
+		await setRedisLoginSession(accessToken, refreshToken, { _id, email: 'oste@marketplace.test' }, { _id })
+
+		expect(await redisClient.hGetAll(accessKey)).toEqual({ _id, email: 'oste@marketplace.test' })
+		expect(await redisClient.hGetAll(refreshKey)).toEqual({ _id })
+		expect(await redisClient.ttl(accessKey)).toBeGreaterThanOrEqual(ACCESS_TTL_MIN - 5)
+		expect(await redisClient.ttl(refreshKey)).toBeGreaterThan(REFRESH_TOKEN_EXPIRY - 60)
+	})
+
+	// The catch block deletes both keys. An empty field map makes the real HSET fail, which is the
+	// only way to watch that cleanup run against the cluster — a mocked client proves nothing here.
+	it('removes both keys when the write fails', async () => {
+		const accessToken = randomUUID()
+		const refreshToken = randomUUID()
+		const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
+		const refreshKey = track(`${REDIS_KEY}refresh:${refreshToken}`)
+
+		await expect(setRedisLoginSession(accessToken, refreshToken, {}, {})).rejects.toThrow()
+
+		expect(await redisClient.hGetAll(accessKey)).toEqual({})
+		expect(await redisClient.hGetAll(refreshKey)).toEqual({})
+	})
+})
+
+describe('non-GraphQL routes', () => {
+	it('serves /health', async () => {
+		const res = await fetch(`${base}/health`)
+
+		expect(res.status).toBe(200)
+		const json = (await res.json()) as { status: string; timestamp: string }
+		expect(json.status).toBe('OK')
+	})
+
+	it('falls through to 404 for an unknown path', async () => {
+		const res = await fetch(`${base}/nope`)
+
+		expect(res.status).toBe(404)
+	})
+})

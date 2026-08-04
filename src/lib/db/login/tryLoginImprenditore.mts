@@ -1,0 +1,31 @@
+import { throwUnauthorizedError } from '@axiumine/koa-utils/graphQL/throw/throwUnauthorizedError'
+import { checkUserAuthorization } from '@lib/db/login/checkUserAuthorization.mjs'
+import { IImprenditoreLoginCheckData } from '@lib/db/login/IImprenditoreLoginCheckData.mjs'
+import { Imprenditore } from '@thedoctorweb_agency/marketplace-common/models/MongoDB/Imprenditore'
+import { ClientSession } from 'mongoose'
+
+/**
+ * Try to login not admin user
+ * @param email
+ * @param password
+ * @param session
+ */
+export async function tryLoginImprenditore(
+	email: string,
+	password: string,
+	session: ClientSession
+): Promise<IImprenditoreLoginCheckData> {
+	const user: IImprenditoreLoginCheckData | null = await Imprenditore.findOne(
+		{ 'login.email': email },
+		'_id disabled deleted login.password login.firstLogin login.lastLogin login.onboardingStep login.onboardingDone'
+	)
+		.session(session)
+		.lean()
+
+	if (user === null) {
+		throw throwUnauthorizedError()
+	}
+	await checkUserAuthorization(user, password, user.login.password) // se ok, prosegue, altrimenti esegut throw err
+
+	return user
+}
