@@ -74,6 +74,7 @@ describe('login', () => {
 		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
 			_id: _id.toString(),
 			email: args.email,
+			tier: 'shopOwner',
 			onboardingStep: 'personalData'
 		})
 		expect(updateLoginStats).toHaveBeenCalledExactlyOnceWith(_id, lastLogin, true, { withTransaction, endSession })
@@ -96,7 +97,8 @@ describe('login', () => {
 
 		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
 			_id: _id.toString(),
-			email: args.email
+			email: args.email,
+			tier: 'shopOwner'
 		})
 		expect(updateLoginStats).toHaveBeenCalledExactlyOnceWith(_id, null, true, expect.anything())
 	})

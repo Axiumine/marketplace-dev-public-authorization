@@ -10,7 +10,8 @@ export async function setRedisLoginSessionShopOwner(
 	refreshToken: string,
 	accessTokenRedisData: IRedisDataShopOwner
 ) {
-	const refreshTokenData: IRefreshData = { _id: accessTokenRedisData._id }
+	// See `setRedisLoginSessionAdmin.mts` — the refresh hash carries the tier for the same reason.
+	const refreshTokenData: IRefreshData = { _id: accessTokenRedisData._id, tier: accessTokenRedisData.tier }
 
 	await setRedisLoginSession(
 		accessToken,

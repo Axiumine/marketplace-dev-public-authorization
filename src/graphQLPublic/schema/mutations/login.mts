@@ -8,6 +8,7 @@ import { tryLoginShopOwner } from '@lib/db/login/tryLoginShopOwner.mjs'
 import { updateLoginStats } from '@lib/db/login/updateLoginStats.mjs'
 import { setRedisLoginSessionShopOwner } from '@lib/db/redis/setRedisLoginSessionShopOwner.mjs'
 import { IRedisDataShopOwner } from '@thedoctorweb_agency/marketplace-common/others/Redis/IRedisDataShopOwner'
+import { TIER } from '@thedoctorweb_agency/marketplace-common/others/Tier'
 import { GraphQLBoolean, GraphQLError, GraphQLNonNull, GraphQLString } from 'graphql'
 import mongoose, { Types } from 'mongoose'
 
@@ -52,9 +53,11 @@ export const login = {
 				const lastLogin = user.login.lastLogin ?? null
 				const step = makeOnboardingData(user.login)
 
+				// See `loginAdmin.mts` for why the tier has to be written into the session hash.
 				const redisData: IRedisDataShopOwner = {
 					_id: id.toString(),
-					email
+					email,
+					tier: TIER.shopOwner
 				}
 				if (step !== null) redisData.onboardingStep = step
 
