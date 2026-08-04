@@ -81,3 +81,18 @@ DSN="https://xxxxxxxxxxxxxx@bugsink.lan/1"
 # Required by ./qodana.sh to run the paid `jetbrains/qodana-js:2026.2` linter and to
 # enable coverage / license-audit / taint inspections.
 QODANA_TOKEN=
+
+# ── Cloudflare Turnstile ──────────────────────────────────────────────────────
+# Secret key of the Turnstile widget the customer *login* form renders. The site key is public and
+# belongs to the frontend; this one never leaves the server. Same widget and same key pair as the
+# registration form on 4027 — one Turnstile "site" covers every form on one hostname.
+#
+# ⚠️ Deliberately NOT in REQUIRED_ENV_VARS. Those abort the process at boot, and the integration
+# suite has no widget and no secret — a service that cannot start without one cannot test itself.
+# assertTurnstile instead fails closed when NODE_ENV=production and the secret is missing, and
+# bypasses in every other environment. A production deployment that forgets this line refuses every
+# customer login; a development one logs in freely. Both are the intended reading of "no secret".
+#
+# ⚠️ It gates loginUser only. `login` and `loginAdmin` are called by two shipped apps that mint no
+# token, so setting this does not affect them — see the note at the top of loginUser.mts.
+TURNSTILE_SECRET=
