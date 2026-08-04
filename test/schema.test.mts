@@ -22,17 +22,22 @@ let MutationsPublic: (typeof import('../src/graphQLPublic/schema/mutations.mts')
 let QueriesPublic: (typeof import('../src/graphQLPublic/schema/queries.mts'))['default']
 let authPublicHello: (typeof import('../src/graphQLPublic/schema/queries/authPublicHello.mts'))['authPublicHello']
 let Hello2Type: (typeof import('../src/graphQLPublic/schema/types/Hello2Type.mts'))['default']
+// Same reason as the four above, and not a top-level import next to LoginAppType: this one is defined
+// in this repo, so it is instrumented by Stryker while koa-utils' type is not.
+let LoginUserType: (typeof import('../src/graphQLPublic/schema/types/LoginUserType.mts'))['LoginUserType']
 
 beforeEach(async () => {
 	const mutationsModule = await import('../src/graphQLPublic/schema/mutations.mts')
 	const queriesModule = await import('../src/graphQLPublic/schema/queries.mts')
 	const authPublicHelloModule = await import('../src/graphQLPublic/schema/queries/authPublicHello.mts')
 	const hello2TypeModule = await import('../src/graphQLPublic/schema/types/Hello2Type.mts')
+	const loginUserTypeModule = await import('../src/graphQLPublic/schema/types/LoginUserType.mts')
 
 	MutationsPublic = mutationsModule.default
 	QueriesPublic = queriesModule.default
 	authPublicHello = authPublicHelloModule.authPublicHello
 	Hello2Type = hello2TypeModule.default
+	LoginUserType = loginUserTypeModule.LoginUserType
 })
 
 describe('Hello2Type', () => {
@@ -78,18 +83,31 @@ describe('QueriesPublic', () => {
 	})
 })
 
+describe('LoginUserType', () => {
+	it('exposes only the accessToken field, a non-nullable String', () => {
+		const fields = LoginUserType.getFields()
+
+		expect(LoginUserType.name).toBe('LoginUserType')
+		expect(Object.keys(fields)).toEqual(['accessToken'])
+		expect(fields.accessToken.type).toBeInstanceOf(GraphQLNonNull)
+		expect((fields.accessToken.type as GraphQLNonNull<typeof GraphQLString>).ofType).toBe(GraphQLString)
+	})
+})
+
 describe('MutationsPublic', () => {
-	it('is named MutationsPublic and mounts login and loginAdmin, both of non-nullable LoginAppType', () => {
+	it('is named MutationsPublic and mounts one login mutation per tier', () => {
 		const fields = MutationsPublic.getFields()
 
 		expect(MutationsPublic.name).toBe('MutationsPublic')
-		expect(Object.keys(fields)).toEqual(['login', 'loginAdmin'])
+		expect(Object.keys(fields)).toEqual(['login', 'loginAdmin', 'loginUser'])
 		expect((fields.login.type as GraphQLNonNull<GraphQLObjectType>).ofType).toBe(LoginAppType)
 		expect((fields.loginAdmin.type as GraphQLNonNull<GraphQLObjectType>).ofType).toBe(LoginAppType)
+		// Deliberately not LoginAppType: that one carries the onboarding fields a customer has none of.
+		expect((fields.loginUser.type as GraphQLNonNull<GraphQLObjectType>).ofType).toBe(LoginUserType)
 	})
 
-	// The two tiers take the same credentials; only the collection they authenticate against differs.
-	it.each(['login', 'loginAdmin'])('%s takes non-nullable email, password and rememberMe', (name) => {
+	// The three tiers take the same credentials; only the collection they authenticate against differs.
+	it.each(['login', 'loginAdmin', 'loginUser'])('%s takes non-nullable email, password and rememberMe', (name) => {
 		const args = Object.fromEntries(MutationsPublic.getFields()[name].args.map((a) => [a.name, a.type]))
 
 		expect(Object.keys(args)).toEqual(['email', 'password', 'rememberMe'])
