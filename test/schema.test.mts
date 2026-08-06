@@ -106,13 +106,43 @@ describe('MutationsPublic', () => {
 		expect((fields.loginUser.type as GraphQLNonNull<GraphQLObjectType>).ofType).toBe(LoginUserType)
 	})
 
-	// The three tiers take the same credentials; only the collection they authenticate against differs.
-	it.each(['login', 'loginAdmin', 'loginUser'])('%s takes non-nullable email, password and rememberMe', (name) => {
+	// The three tiers take the same credentials; only the collection they authenticate against differs —
+	// and only the customer tier carries a Turnstile token, because it is the only login page open to
+	// anonymous traffic at scale. The expected list is per tier rather than shared, so that difference is
+	// something this test states rather than something it happens to tolerate: a shared prefix assertion
+	// would pass just as happily if `turnstileToken` were quietly dropped from `loginUser` or bolted onto
+	// the other two.
+	it.each([
+		['login', ['email', 'password', 'rememberMe']],
+		['loginAdmin', ['email', 'password', 'rememberMe']],
+		['loginUser', ['email', 'password', 'rememberMe', 'turnstileToken']]
+	])('%s takes non-nullable email, password and rememberMe', (name, expected) => {
 		const args = Object.fromEntries(MutationsPublic.getFields()[name].args.map((a) => [a.name, a.type]))
 
-		expect(Object.keys(args)).toEqual(['email', 'password', 'rememberMe'])
+		expect(Object.keys(args)).toEqual(expected)
 		expect((args.email as GraphQLNonNull<typeof GraphQLString>).ofType).toBe(GraphQLString)
 		expect((args.password as GraphQLNonNull<typeof GraphQLString>).ofType).toBe(GraphQLString)
 		expect((args.rememberMe as GraphQLNonNull<typeof GraphQLBoolean>).ofType).toBe(GraphQLBoolean)
+	})
+
+	// The one described field on this schema — `login` and `loginAdmin` carry no `description` at all,
+	// so introspection shows the customer mutation documented and the other two bare. Asserted because
+	// a description is the only part of a GraphQL field that no resolver test can reach: it changes
+	// nothing at runtime, every behavioural test passes with it emptied, and the SDL a client generates
+	// is where it is missed.
+	it('describes loginUser', () => {
+		expect(MutationsPublic.getFields().loginUser.description).toBe('Log a customer in')
+	})
+
+	// ⚠️ Nullable on purpose, and the gate still holds. `assertTurnstile` verifies a token only when this
+	// process holds a secret key, so a developer machine with none configured accepts the tokenless
+	// request a browser with no site key sends, while a deployment that has the secret rejects it. Making
+	// the arg non-nullable would break exactly that setup and buy nothing: a client cannot weaken the gate
+	// by omitting the field, it can only fail to help. So the nullability is load-bearing, not an oversight
+	// to be "tightened" later.
+	it('takes turnstileToken as a nullable String on loginUser only', () => {
+		const args = Object.fromEntries(MutationsPublic.getFields().loginUser.args.map((a) => [a.name, a.type]))
+
+		expect(args.turnstileToken).toBe(GraphQLString)
 	})
 })

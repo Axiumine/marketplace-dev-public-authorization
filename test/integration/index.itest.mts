@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { redisClient } from '@axiumine/koa-utils/dataSources/Redis'
 import { REFRESH_TOKEN_EXPIRY } from '@axiumine/koa-utils/lib/tokens'
 import bcrypt from '@node-rs/bcrypt'
+import { TIER } from '@thedoctorweb_agency/marketplace-common/others/Tier'
 import type { Server } from 'http'
 import mongoose from 'mongoose'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -263,22 +264,35 @@ describe('login against the real MongoDB', () => {
 
 /**
  * The half of a login assertion that is the same on both tiers: a non-empty access token, an access
- * hash holding exactly `_id` + `email`, a refresh hash holding only the `_id`, and two TTLs armed
- * *after* their fields — the ordering the source comment warns about, since a key whose TTL was set
- * first would read -1 here. Exact equality on both hashes is the point: an `shopOwner` gets no
+ * hash holding exactly `_id` + `email` + `tier`, a refresh hash holding `_id` + `tier`, and two TTLs
+ * armed *after* their fields — the ordering the source comment warns about, since a key whose TTL was
+ * set first would read -1 here. Exact equality on both hashes is the point: an `shopOwner` gets no
  * `onboardingStep` while `makeOnboardingData` returns null, and `IRedisDataAdmin` has no onboarding
  * fields at all, so either tier writing a third key would fail this.
  *
+ * ⚠️ `tier` is a parameter rather than a constant because this is the *only* place it is written. All
+ * nine services share one `REDIS_KEY` prefix, so a session minted here is findable by every one of
+ * them, and each asserts the tier before trusting it. Both hashes carry it: the access hash is what a
+ * resource service reads, the refresh hash is what an authorization service reads, and a tier on only
+ * one of the two would let the missing half be refreshed into a session with no tier at all — which is
+ * refused, correctly, but by then the login has already succeeded and the customer sees a dead app.
+ *
  * Registers both keys for the `afterAll` drain and hands them back for whatever the caller checks next.
  */
-async function expectSessionOnCluster(accessToken: string, setCookie: string[], _id: mongoose.Types.ObjectId, email: string) {
+async function expectSessionOnCluster(
+	accessToken: string,
+	setCookie: string[],
+	_id: mongoose.Types.ObjectId,
+	email: string,
+	tier: string
+) {
 	expect(accessToken).not.toBe('')
 
 	const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
 	const refreshKey = track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
 
-	expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email })
-	expect(await redisClient.hGetAll(refreshKey)).toEqual({ _id: _id.toHexString() })
+	expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email, tier })
+	expect(await redisClient.hGetAll(refreshKey)).toEqual({ _id: _id.toHexString(), tier })
 
 	const accessTtl = await redisClient.ttl(accessKey)
 	expect(accessTtl).toBeGreaterThanOrEqual(ACCESS_TTL_MIN - 5)
@@ -308,7 +322,7 @@ describe('login writes a real session on the cluster', () => {
 
 		// setRedisLoginSessionShopOwner writes the whole IRedisDataShopOwner into the access
 		// hash and only the _id into the refresh one.
-		await expectSessionOnCluster(accessToken, setCookie, _id, email)
+		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.shopOwner)
 
 		// updateLoginStats ran in the same transaction, which therefore really committed.
 		// rememberMe: false takes the $unset branch, so the field must not be there at all.
@@ -328,7 +342,12 @@ describe('login writes a real session on the cluster', () => {
 		const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
 		track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
 
-		expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email, onboardingStep: 'p3' })
+		expect(await redisClient.hGetAll(accessKey)).toEqual({
+			_id: _id.toHexString(),
+			email,
+			tier: TIER.shopOwner,
+			onboardingStep: 'p3'
+		})
 
 		// rememberMe: true takes the $set branch instead.
 		const doc = await db().collection('shopOwner').findOne({ _id })
@@ -426,7 +445,7 @@ describe('loginAdmin writes a real session on the cluster', () => {
 
 		const { accessToken } = json.data?.loginAdmin as { accessToken: string }
 
-		await expectSessionOnCluster(accessToken, setCookie, _id, email)
+		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.admin)
 
 		const doc = await db().collection('admin').findOne({ _id })
 		expect(doc?.login.lastLogin).toBeInstanceOf(Date)
