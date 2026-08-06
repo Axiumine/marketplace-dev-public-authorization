@@ -7,6 +7,7 @@ import { tryLoginAdmin } from '@lib/db/login/tryLoginAdmin.mjs'
 import { updateAdminLoginStats } from '@lib/db/login/updateAdminLoginStats.mjs'
 import { setRedisLoginSessionAdmin } from '@lib/db/redis/setRedisLoginSessionAdmin.mjs'
 import { IRedisDataAdmin } from '@thedoctorweb_agency/marketplace-common/others/Redis/IRedisDataAdmin'
+import { TIER } from '@thedoctorweb_agency/marketplace-common/others/Tier'
 import { GraphQLBoolean, GraphQLError, GraphQLNonNull, GraphQLString } from 'graphql'
 import mongoose from 'mongoose'
 
@@ -53,9 +54,13 @@ export const loginAdmin = {
 				 */
 				const id = admin._id
 
+				// `tier` is what stops this session from being spent on another tier's service.
+				// Every service reads Redis under the same `REDIS_KEY` prefix, so the key alone says
+				// nothing about which collection minted it — the discriminator has to be in the hash.
 				const redisData: IRedisDataAdmin = {
 					_id: id.toString(),
-					email
+					email,
+					tier: TIER.admin
 				}
 
 				accessToken = generateAccessToken()

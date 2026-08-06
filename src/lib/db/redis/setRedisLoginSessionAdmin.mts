@@ -10,7 +10,9 @@ export async function setRedisLoginSessionAdmin(
 	refreshToken: string,
 	accessTokenRedisData: IRedisDataAdmin
 ) {
-	const refreshTokenData: IRefreshData = { _id: accessTokenRedisData._id }
+	// The refresh hash carries the tier too, not just the access hash: `refresh` mints a brand-new
+	// access session from it, and a tier it cannot read is a tier it would have to guess.
+	const refreshTokenData: IRefreshData = { _id: accessTokenRedisData._id, tier: accessTokenRedisData.tier }
 
 	await setRedisLoginSession(
 		accessToken,

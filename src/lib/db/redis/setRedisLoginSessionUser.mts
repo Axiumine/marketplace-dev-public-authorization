@@ -1,15 +1,11 @@
 import { setRedisLoginSession } from '@lib/db/redis/setRedisLoginSession.mjs'
 import { IRefreshData } from '@thedoctorweb_agency/marketplace-common/others/IRefreshData'
-import { IRedisDataShopOwner } from '@thedoctorweb_agency/marketplace-common/others/Redis/IRedisDataShopOwner'
+import { IRedisDataUser } from '@thedoctorweb_agency/marketplace-common/others/Redis/IRedisDataUser'
 import * as dotenv from 'dotenv'
 
 dotenv.config()
 
-export async function setRedisLoginSessionShopOwner(
-	accessToken: string,
-	refreshToken: string,
-	accessTokenRedisData: IRedisDataShopOwner
-) {
+export async function setRedisLoginSessionUser(accessToken: string, refreshToken: string, accessTokenRedisData: IRedisDataUser) {
 	// See `setRedisLoginSessionAdmin.mts` — the refresh hash carries the tier for the same reason.
 	const refreshTokenData: IRefreshData = { _id: accessTokenRedisData._id, tier: accessTokenRedisData.tier }
 

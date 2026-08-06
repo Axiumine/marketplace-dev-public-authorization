@@ -71,7 +71,8 @@ describe('loginAdmin', () => {
 		expect(tryLoginAdmin).toHaveBeenCalledExactlyOnceWith(args.email, args.password, { withTransaction, endSession })
 		expect(setRedisLoginSessionAdmin).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
 			_id: _id.toString(),
-			email: args.email
+			email: args.email,
+			tier: 'admin'
 		})
 		expect(updateAdminLoginStats).toHaveBeenCalledExactlyOnceWith(_id, lastLogin, false, { withTransaction, endSession })
 		expect(setLoginCookies).toHaveBeenCalledExactlyOnceWith(ctx, REFRESH)
