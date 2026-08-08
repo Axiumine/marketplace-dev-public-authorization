@@ -1,7 +1,7 @@
 import { throwUnauthorizedError } from '@axiumine/koa-utils/graphQL/throw/throwUnauthorizedError'
+import { ShopOwner } from '@axiumine/marketplace-common/models/MongoDB/ShopOwner'
 import { checkUserAuthorization } from '@lib/db/login/checkUserAuthorization.mjs'
 import { IShopOwnerLoginCheckData } from '@lib/db/login/IShopOwnerLoginCheckData.mjs'
-import { ShopOwner } from '@thedoctorweb_agency/marketplace-common/models/MongoDB/ShopOwner'
 import { ClientSession } from 'mongoose'
 
 /**

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const updateOne = vi.fn()
 
-vi.mock('@thedoctorweb_agency/marketplace-common/models/MongoDB/User', () => ({ User: { updateOne } }))
+vi.mock('@axiumine/marketplace-common/models/MongoDB/User', () => ({ User: { updateOne } }))
 
 const { updateUserLoginStats } = await import('../src/lib/db/login/updateUserLoginStats.mts')
 

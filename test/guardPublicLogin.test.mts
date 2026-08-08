@@ -6,8 +6,8 @@ const assertTurnstile = vi.fn()
 const redisClient = { id: 'redis-client' }
 
 vi.mock('@axiumine/koa-utils/dataSources/Redis', () => ({ redisClient }))
-vi.mock('@thedoctorweb_agency/marketplace-common/others/assertUnderRateLimit', () => ({ assertUnderRateLimit }))
-vi.mock('@thedoctorweb_agency/marketplace-common/others/assertTurnstile', () => ({ assertTurnstile }))
+vi.mock('@axiumine/marketplace-common/others/assertUnderRateLimit', () => ({ assertUnderRateLimit }))
+vi.mock('@axiumine/marketplace-common/others/assertTurnstile', () => ({ assertTurnstile }))
 
 const { guardPublicLogin, RATE_WINDOW_SECONDS } = await import('../src/lib/access/guardPublicLogin.mts')
 

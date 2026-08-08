@@ -1,7 +1,7 @@
 import { throwUnauthorizedError } from '@axiumine/koa-utils/graphQL/throw/throwUnauthorizedError'
+import { Admin } from '@axiumine/marketplace-common/models/MongoDB/Admin'
 import { checkAdminAuthorization } from '@lib/db/login/checkAdminAuthorization.mjs'
 import { IAdminLoginCheckData } from '@lib/db/login/IAdminLoginCheckData.mjs'
-import { Admin } from '@thedoctorweb_agency/marketplace-common/models/MongoDB/Admin'
 import { ClientSession } from 'mongoose'
 
 /**

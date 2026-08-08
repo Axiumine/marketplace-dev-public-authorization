@@ -1,7 +1,7 @@
 import { throwUnauthorizedError } from '@axiumine/koa-utils/graphQL/throw/throwUnauthorizedError'
+import { User } from '@axiumine/marketplace-common/models/MongoDB/User'
 import { checkUserAuthorization } from '@lib/db/login/checkUserAuthorization.mjs'
 import { IUserLoginCheckData } from '@lib/db/login/IUserLoginCheckData.mjs'
-import { User } from '@thedoctorweb_agency/marketplace-common/models/MongoDB/User'
 import { ClientSession } from 'mongoose'
 
 /**

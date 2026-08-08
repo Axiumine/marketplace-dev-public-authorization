@@ -1,6 +1,6 @@
+import { IRefreshData } from '@axiumine/marketplace-common/others/IRefreshData'
+import { IRedisDataShopOwner } from '@axiumine/marketplace-common/others/Redis/IRedisDataShopOwner'
 import { setRedisLoginSession } from '@lib/db/redis/setRedisLoginSession.mjs'
-import { IRefreshData } from '@thedoctorweb_agency/marketplace-common/others/IRefreshData'
-import { IRedisDataShopOwner } from '@thedoctorweb_agency/marketplace-common/others/Redis/IRedisDataShopOwner'
 import * as dotenv from 'dotenv'
 
 dotenv.config()

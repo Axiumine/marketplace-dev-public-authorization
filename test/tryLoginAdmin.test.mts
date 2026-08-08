@@ -7,7 +7,7 @@ const sessionFn = vi.fn(() => ({ lean }))
 const findOne = vi.fn(() => ({ session: sessionFn }))
 const checkAdminAuthorization = vi.fn()
 
-vi.mock('@thedoctorweb_agency/marketplace-common/models/MongoDB/Admin', () => ({ Admin: { findOne } }))
+vi.mock('@axiumine/marketplace-common/models/MongoDB/Admin', () => ({ Admin: { findOne } }))
 vi.mock('@lib/db/login/checkAdminAuthorization.mjs', () => ({ checkAdminAuthorization }))
 
 const { tryLoginAdmin } = await import('../src/lib/db/login/tryLoginAdmin.mts')
