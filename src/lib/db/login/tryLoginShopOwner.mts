@@ -25,7 +25,7 @@ export async function tryLoginShopOwner(
 	if (user === null) {
 		throw throwUnauthorizedError()
 	}
-	await checkUserAuthorization(user, password, user.login.password) // se ok, prosegue, altrimenti esegut throw err
+	await checkUserAuthorization(user, password, user.login.password) // resolves when the password matches, throws otherwise
 
 	return user
 }

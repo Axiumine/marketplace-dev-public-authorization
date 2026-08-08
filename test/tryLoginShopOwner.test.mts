@@ -15,7 +15,7 @@ const { tryLoginShopOwner } = await import('../src/lib/db/login/tryLoginShopOwne
 const session = { id: 'session' } as unknown as ClientSession
 const user = {
 	_id: new Types.ObjectId('507f1f77bcf86cd799439011'),
-	login: { password: 'stored-hash', onboardingDone: true, onboardingStep: 'fine' }
+	login: { password: 'stored-hash', onboardingDone: true, onboardingStep: 'done' }
 }
 
 describe('tryLoginShopOwner', () => {

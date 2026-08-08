@@ -23,7 +23,7 @@ export async function tryLoginAdmin(email: string, password: string, session: Cl
 	}
 	// `admin` first: the disabled/deleted gate inside needs the projected flags, which is why the
 	// projection above selects them. Mirrors tryLoginShopOwner/checkUserAuthorization.
-	await checkAdminAuthorization(admin, password, admin.login.password) // se ok, prosegue, altrimenti esegue throw err
+	await checkAdminAuthorization(admin, password, admin.login.password) // resolves when the password matches, throws otherwise
 
 	return admin
 }
