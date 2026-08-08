@@ -5,7 +5,7 @@ const compareHashAsync = vi.fn()
 const checkUserAuthorizationDisDel = vi.fn()
 
 vi.mock('@axiumine/koa-utils/lib/hash', () => ({ compareHashAsync }))
-vi.mock('@thedoctorweb_agency/marketplace-common/others/checkUserAuthorizationDisDel', () => ({ checkUserAuthorizationDisDel }))
+vi.mock('@axiumine/marketplace-common/others/checkUserAuthorizationDisDel', () => ({ checkUserAuthorizationDisDel }))
 
 const { checkUserAuthorization } = await import('../src/lib/db/login/checkUserAuthorization.mts')
 

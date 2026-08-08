@@ -1,7 +1,7 @@
 import { throwUnauthorizedError } from '@axiumine/koa-utils/graphQL/throw/throwUnauthorizedError'
 import { compareHashAsync } from '@axiumine/koa-utils/lib/hash'
 import { IAuthorizationDisDel } from '@axiumine/koa-utils/lib/IAuthorizationDisDel'
-import { checkUserAuthorizationDisDel } from '@thedoctorweb_agency/marketplace-common/others/checkUserAuthorizationDisDel'
+import { checkUserAuthorizationDisDel } from '@axiumine/marketplace-common/others/checkUserAuthorizationDisDel'
 
 /**
  * called once the account email has been found in the database

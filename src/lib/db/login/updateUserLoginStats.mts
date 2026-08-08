@@ -1,5 +1,5 @@
+import { User } from '@axiumine/marketplace-common/models/MongoDB/User'
 import { funUpdateLoginStats } from '@lib/db/login/funUpdateLoginStats.mjs'
-import { User } from '@thedoctorweb_agency/marketplace-common/models/MongoDB/User'
 import { ClientSession, Types } from 'mongoose'
 
 export async function updateUserLoginStats(

@@ -1,5 +1,5 @@
+import { Admin } from '@axiumine/marketplace-common/models/MongoDB/Admin'
 import { funUpdateLoginStats } from '@lib/db/login/funUpdateLoginStats.mjs'
-import { Admin } from '@thedoctorweb_agency/marketplace-common/models/MongoDB/Admin'
 import { ClientSession, Types } from 'mongoose'
 
 export async function updateAdminLoginStats(

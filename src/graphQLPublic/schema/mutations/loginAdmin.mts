@@ -3,11 +3,11 @@ import { LoginAppType } from '@axiumine/koa-utils/graphQL/schema/types/LoginAppT
 import { setLoginCookies } from '@axiumine/koa-utils/lib/setLoginCookies'
 import { generateAccessToken, generateRefreshToken } from '@axiumine/koa-utils/lib/tokens'
 import { tryCatchRethrow } from '@axiumine/koa-utils/lib/tryCatchRethrow'
+import { IRedisDataAdmin } from '@axiumine/marketplace-common/others/Redis/IRedisDataAdmin'
+import { TIER } from '@axiumine/marketplace-common/others/Tier'
 import { tryLoginAdmin } from '@lib/db/login/tryLoginAdmin.mjs'
 import { updateAdminLoginStats } from '@lib/db/login/updateAdminLoginStats.mjs'
 import { setRedisLoginSessionAdmin } from '@lib/db/redis/setRedisLoginSessionAdmin.mjs'
-import { IRedisDataAdmin } from '@thedoctorweb_agency/marketplace-common/others/Redis/IRedisDataAdmin'
-import { TIER } from '@thedoctorweb_agency/marketplace-common/others/Tier'
 import { GraphQLBoolean, GraphQLError, GraphQLNonNull, GraphQLString } from 'graphql'
 import mongoose from 'mongoose'
 
