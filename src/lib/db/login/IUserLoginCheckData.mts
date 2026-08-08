@@ -1,7 +1,7 @@
 import { Types } from 'mongoose'
 
 /**
- * What `tryLoginUser` projects out of a `user` row.
+ * What `tryLoginUser` projects out of a `user` document.
  *
  * Two divergences from `IShopOwnerLoginCheckData`, both of them the tier's shape rather than an
  * omission: there is no `onboardingStep` / `onboardingDone`, because a customer is not walked through
