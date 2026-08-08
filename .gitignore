@@ -16,7 +16,6 @@ nohup.out
 # Stryker
 reports/
 .stryker-tmp/
-.env*.bak
 
 # Semgrep's own output.
 semgrep.sarif
