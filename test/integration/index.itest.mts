@@ -3,6 +3,16 @@ import type { AddressInfo } from 'node:net'
 
 import { redisClient } from '@axiumine/koa-utils/dataSources/Redis'
 import { REFRESH_TOKEN_EXPIRY } from '@axiumine/koa-utils/lib/tokens'
+import { encryptDocument } from '@axiumine/marketplace-common/encryption/encryptDocument'
+import {
+	ENCRYPTED_FIELDS_ADMIN,
+	ENCRYPTED_FIELDS_SHOP_OWNER,
+	KEY_ALT_NAME_ADMIN,
+	KEY_ALT_NAME_SHOP_OWNER
+} from '@axiumine/marketplace-common/encryption/encryptedFields'
+import { ALGORITHM_DETERMINISTIC } from '@axiumine/marketplace-common/encryption/EncryptionAlgorithm'
+import { encryptValue } from '@axiumine/marketplace-common/encryption/fieldEncryption'
+import { isCiphertext } from '@axiumine/marketplace-common/encryption/isCiphertext'
 import { TIER } from '@axiumine/marketplace-common/others/Tier'
 import bcrypt from '@node-rs/bcrypt'
 import type { Server } from 'http'
@@ -95,21 +105,32 @@ async function seedShopOwner(login: Record<string, unknown> = {}, extra: Record<
 	const email = itestEmail()
 	const _id = new mongoose.Types.ObjectId()
 
+	// ⚠️ Encrypted after both override bags are spread in, and before the insert (ADR-029): a caller
+	// overriding `login` or a personal field gets its own value encrypted too, and what the
+	// collection holds for one is `binData` subtype 6 — a plaintext seed would be a document no
+	// resolver on the platform can produce, and `login` would then never find it, since the lookup
+	// is by the *deterministic ciphertext* of the address.
 	await db()
 		.collection('shopOwner')
-		.insertOne({
-			_id,
-			login: { email, password: passwordHash, ...login },
-			personalData: {
-				firstName: 'Itest',
-				lastName: 'ShopOwner',
-				birth: { date: new Date('1980-01-01T00:00:00Z') },
-				address: { street: '1 Test Street', postalCode: '01103', city: 'Springfield', province: 'MA' },
-				contacts: { mobile: '3900000000', email }
-			},
-			registeredAt: new Date(),
-			...extra
-		})
+		.insertOne(
+			await encryptDocument(
+				{
+					_id,
+					login: { email, password: passwordHash, ...login },
+					personalData: {
+						firstName: 'Itest',
+						lastName: 'ShopOwner',
+						birth: { date: new Date('1980-01-01T00:00:00Z') },
+						address: { street: '1 Test Street', postalCode: '01103', city: 'Springfield', province: 'MA' },
+						contacts: { mobile: '3900000000', email }
+					},
+					registeredAt: new Date(),
+					...extra
+				},
+				ENCRYPTED_FIELDS_SHOP_OWNER,
+				KEY_ALT_NAME_SHOP_OWNER
+			)
+		)
 	seededDocs.push({ collection: 'shopOwner', _id })
 
 	return { _id, email }
@@ -122,12 +143,18 @@ async function seedAdmin(login: Record<string, unknown> = {}, extra: Record<stri
 
 	await db()
 		.collection('admin')
-		.insertOne({
-			_id,
-			login: { email, password: passwordHash, ...login },
-			personalData: { firstName: 'Itest', lastName: 'Admin' },
-			...extra
-		})
+		.insertOne(
+			await encryptDocument(
+				{
+					_id,
+					login: { email, password: passwordHash, ...login },
+					personalData: { firstName: 'Itest', lastName: 'Admin' },
+					...extra
+				},
+				ENCRYPTED_FIELDS_ADMIN,
+				KEY_ALT_NAME_ADMIN
+			)
+		)
 	seededDocs.push({ collection: 'admin', _id })
 
 	return { _id, email }
@@ -259,6 +286,52 @@ describe('login against the real MongoDB', () => {
 
 		expect(json.data?.loginAdmin ?? null).toBeNull()
 		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+})
+
+/**
+ * The at-rest half of ADR-029, on the one service that has to *find* an account by a personal field.
+ *
+ * `login` and `loginAdmin` look an account up by email address, and the address in the collection is a
+ * ciphertext — so the lookup only works because `login.email` is encrypted **deterministically**: the
+ * same address always produces the same bytes, and an equality match on those bytes is an equality
+ * match on the address. Everything else here is random, which is why the two seeds' `firstName`
+ * ciphertexts differ although both spell `Itest`.
+ *
+ * That difference is the whole assertion. A field quietly switched from random to deterministic would
+ * still round-trip, still pass every other test in this file, and still answer every query correctly —
+ * and would have handed anyone with read access to the collection an equality oracle over the personal
+ * data. Nothing but a same-value/different-ciphertext check notices.
+ */
+describe('personal fields at rest', () => {
+	it('stores login.email deterministically and every other personal field randomly', async () => {
+		const { _id: idShopOwner, email } = await seedShopOwner()
+		const { _id: idAdmin } = await seedAdmin()
+		const { _id: idAdmin2 } = await seedAdmin()
+
+		const shopOwner = await db().collection('shopOwner').findOne({ _id: idShopOwner })
+		const admin = await db().collection('admin').findOne({ _id: idAdmin })
+		const admin2 = await db().collection('admin').findOne({ _id: idAdmin2 })
+
+		// Nothing readable survives the write, on either collection.
+		expect(isCiphertext(shopOwner?.login.email)).toBe(true)
+		expect(isCiphertext(shopOwner?.personalData.contacts.mobile)).toBe(true)
+		expect(isCiphertext(shopOwner?.personalData.address.street)).toBe(true)
+		expect(isCiphertext(admin?.login.email)).toBe(true)
+		expect(isCiphertext(admin?.personalData.firstName)).toBe(true)
+
+		// Deterministic: re-encrypting the plaintext address reproduces the stored bytes exactly, which
+		// is what makes `{ 'login.email': <ciphertext> }` a working filter for the login resolvers.
+		const emailCiphertext = await encryptValue(email, ALGORITHM_DETERMINISTIC, KEY_ALT_NAME_SHOP_OWNER)
+
+		expect(shopOwner?.login.email).toEqual(emailCiphertext)
+
+		// Random: two admins with the identical `firstName` are stored as different bytes.
+		expect(admin?.personalData.firstName).not.toEqual(admin2?.personalData.firstName)
+
+		// The password is NOT encrypted, deliberately — it is already an argon2 hash, and encrypting a
+		// hash buys nothing while breaking the one comparison the login path makes.
+		expect(isCiphertext(shopOwner?.login.password)).toBe(false)
 	})
 })
 
