@@ -14,7 +14,7 @@ const session = { id: 'session' } as unknown as ClientSession
 // The function is three lines of delegation to `funUpdateLoginStats`, and the only thing it decides is
 // which collection the update lands on. Mocking the model rather than the delegate is what makes that
 // visible: a copy-paste that left `ShopOwner` in here would pass every assertion about the update
-// document and still stamp the wrong tier's row.
+// document and still stamp the wrong tier's collection.
 describe('updateUserLoginStats', () => {
 	beforeEach(() => updateOne.mockReset())
 
