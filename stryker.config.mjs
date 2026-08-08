@@ -78,10 +78,15 @@ export default {
 		// first Stryker run with no index.mts exclusion at all: every mutant inside these three
 		// ranges reported NoCoverage, and none outside them did.
 		'!src/index.mts',
+		// ⚠️ These are LINE NUMBERS, and they do not move when the file does. Adding anything above
+		// createServer() slides its body into a range marked "in scope", and the mutants that land
+		// there have no unit test to kill them — the run drops off 100 with survivors nobody
+		// introduced. That is exactly what ADR-029's `await setupFieldEncryption()` did. Re-derive
+		// all three boundaries from the source whenever src/index.mts changes length.
 		// 1) top of file through onUncaughtException, just before createServer()'s JSDoc: fully
 		//    unit-tested.
-		'src/index.mts:1-105',
-		// 2) createServer() itself (106-180) is deliberately skipped: it wires the real Koa app,
+		'src/index.mts:1-111',
+		// 2) createServer() itself (112-186) is deliberately skipped: it wires the real Koa app,
 		//    the ENDPOINT/`/health` routing middleware and the real ApolloServer, which
 		//    test/integration/index.itest.mts exercises by actually booting the server and hitting
 		//    it over HTTP (see COVERAGE.md, "Server boot ... are covered" — via the integration
@@ -89,13 +94,13 @@ export default {
 		//    signature through the DB-connect try/Promise.all is unit-tested (the two "start
 		//    (failure path)" tests reject MongoDBConnect/RedisConnect before createServer() is
 		//    ever reached), so it is re-included here.
-		'src/index.mts:181-199',
-		// 3) 200-215 is skipped: the happy-path continuation of start() (httpServer.listen, the
+		'src/index.mts:187-216',
+		// 3) 217-232 is skipped: the happy-path continuation of start() (httpServer.listen, the
 		//    wrapping Promise, the final `return`) only runs once both datasources actually
 		//    connect, which happens only under the integration project. start()'s catch block
-		//    (216-222) is unit-tested (both failure-path tests reach it), so it is re-included.
-		'src/index.mts:216-222'
-		// 4) 223-241 (the `/* v8 ignore start/stop */` bootstrap tail) stays out: it is guarded by
+		//    (233-239) is unit-tested (both failure-path tests reach it), so it is re-included.
+		'src/index.mts:233-239'
+		// 4) 240-258 (the `/* v8 ignore start/stop */` bootstrap tail) stays out: it is guarded by
 		//    `if (process.env.NODE_ENV !== 'test')`, so it structurally cannot execute inside any
 		//    test process, unit or integration — the same reason it is v8-ignored for the coverage
 		//    gate instead of test-covered.
