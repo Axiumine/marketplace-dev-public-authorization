@@ -106,15 +106,13 @@ describe('MutationsPublic', () => {
 		expect((fields.loginUser.type as GraphQLNonNull<GraphQLObjectType>).ofType).toBe(LoginUserType)
 	})
 
-	// The three tiers take the same credentials; only the collection they authenticate against differs —
-	// and only the customer tier carries a Turnstile token, because it is the only login page open to
-	// anonymous traffic at scale. The expected list is per tier rather than shared, so that difference is
-	// something this test states rather than something it happens to tolerate: a shared prefix assertion
-	// would pass just as happily if `turnstileToken` were quietly dropped from `loginUser` or bolted onto
-	// the other two.
+	// The three tiers take the same credentials and the same Turnstile token; only the collection they
+	// authenticate against differs. The expected list is spelled out per tier rather than shared, so that a
+	// field silently disappearing from one of the three fails here: a shared prefix assertion would pass
+	// just as happily with `turnstileToken` dropped from one login page and kept on the other two.
 	it.each([
-		['login', ['email', 'password', 'rememberMe']],
-		['loginAdmin', ['email', 'password', 'rememberMe']],
+		['login', ['email', 'password', 'rememberMe', 'turnstileToken']],
+		['loginAdmin', ['email', 'password', 'rememberMe', 'turnstileToken']],
 		['loginUser', ['email', 'password', 'rememberMe', 'turnstileToken']]
 	])('%s takes non-nullable email, password and rememberMe', (name, expected) => {
 		const args = Object.fromEntries(MutationsPublic.getFields()[name].args.map((a) => [a.name, a.type]))
@@ -140,8 +138,8 @@ describe('MutationsPublic', () => {
 	// the arg non-nullable would break exactly that setup and buy nothing: a client cannot weaken the gate
 	// by omitting the field, it can only fail to help. So the nullability is load-bearing, not an oversight
 	// to be "tightened" later.
-	it('takes turnstileToken as a nullable String on loginUser only', () => {
-		const args = Object.fromEntries(MutationsPublic.getFields().loginUser.args.map((a) => [a.name, a.type]))
+	it.each(['login', 'loginAdmin', 'loginUser'])('takes turnstileToken as a nullable String on %s', (name) => {
+		const args = Object.fromEntries(MutationsPublic.getFields()[name].args.map((a) => [a.name, a.type]))
 
 		expect(args.turnstileToken).toBe(GraphQLString)
 	})

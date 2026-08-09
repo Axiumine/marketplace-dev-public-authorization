@@ -1,10 +1,12 @@
 import type { IContextLogin } from '@axiumine/koa-utils/graphQL/schema/context/IContextLogin'
+import type { Context } from 'koa'
 import { Types } from 'mongoose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ACCESS = 'access-token'
 const REFRESH = 'refresh-token'
 
+const guardPublicLogin = vi.fn()
 const tryLoginAdmin = vi.fn()
 const updateAdminLoginStats = vi.fn()
 const setRedisLoginSessionAdmin = vi.fn()
@@ -28,6 +30,7 @@ vi.mock('mongoose', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('mongoose')>()
 	return { ...actual, default: { ...actual.default, startSession } }
 })
+vi.mock('@lib/access/guardPublicLogin.mjs', () => ({ guardPublicLogin }))
 vi.mock('@lib/db/login/tryLoginAdmin.mjs', () => ({ tryLoginAdmin }))
 vi.mock('@lib/db/login/updateAdminLoginStats.mjs', () => ({ updateAdminLoginStats }))
 vi.mock('@lib/db/redis/setRedisLoginSessionAdmin.mjs', () => ({ setRedisLoginSessionAdmin }))
@@ -41,13 +44,14 @@ vi.mock('@sentry/node', () => ({ captureException }))
 const { loginAdmin } = await import('../src/graphQLPublic/schema/mutations/loginAdmin.mts')
 
 const _id = new Types.ObjectId('507f1f77bcf86cd799439011')
-const ctx = { cookies: { set: vi.fn() } } as unknown as IContextLogin
-const args = { email: 'operator@marketplace.test', password: 'clear', rememberMe: false }
+const ctx = { ip: '203.0.113.7', cookies: { set: vi.fn() } } as unknown as Context & IContextLogin
+const args = { email: 'operator@marketplace.test', password: 'clear', rememberMe: false, turnstileToken: 'turnstile-token' }
 
 let log: ReturnType<typeof vi.spyOn>
 
 describe('loginAdmin', () => {
 	beforeEach(() => {
+		guardPublicLogin.mockReset().mockResolvedValue(undefined)
 		tryLoginAdmin.mockReset()
 		updateAdminLoginStats.mockReset().mockResolvedValue(undefined)
 		setRedisLoginSessionAdmin.mockReset().mockResolvedValue(undefined)
@@ -86,6 +90,46 @@ describe('loginAdmin', () => {
 		await loginAdmin.resolve(null, args, ctx)
 
 		expect(updateAdminLoginStats).toHaveBeenCalledExactlyOnceWith(_id, null, false, expect.anything())
+	})
+
+	// The counter is worth nothing if it is spent after the work it is meant to refuse. `guardPublicLogin`
+	// runs before the Mongo session and before bcrypt, so a refused caller costs one Redis INCR.
+	it('refuses a rate-limited caller before opening a session or touching the database', async () => {
+		guardPublicLogin.mockRejectedValueOnce(new Error('Too Many Requests'))
+
+		await expect(loginAdmin.resolve(null, args, ctx)).rejects.toThrow('Too Many Requests')
+
+		expect(startSession).not.toHaveBeenCalled()
+		expect(tryLoginAdmin).not.toHaveBeenCalled()
+		expect(setLoginCookies).not.toHaveBeenCalled()
+	})
+
+	// The limits are policy, so they are asserted rather than left to whoever edits the constants next, and
+	// they are the tightest of the three tiers on purpose: a handful of operator accounts sign in from a
+	// handful of places, and a stolen operator session is the worst outcome on the platform.
+	it('meters on the loginAdmin bucket at 10 per IP and 30 per email, with a normalised address', async () => {
+		tryLoginAdmin.mockResolvedValueOnce({ _id, login: {} })
+
+		await loginAdmin.resolve(null, { ...args, email: '  Operator@Marketplace.TEST  ' }, ctx)
+
+		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith(ctx, {
+			bucket: 'loginAdmin',
+			email: 'operator@marketplace.test',
+			turnstileToken: args.turnstileToken,
+			perIpPerHour: 10,
+			perEmailPerHour: 30
+		})
+	})
+
+	// The argument is nullable and the gate still holds: `assertTurnstile` verifies a token only when the
+	// process holds a secret of its own, so a request with no token is refused exactly where it should be
+	// — in a deployment that has the secret — and waved through on a developer box that does not.
+	it('passes an absent turnstileToken through rather than substituting one', async () => {
+		tryLoginAdmin.mockResolvedValueOnce({ _id, login: {} })
+
+		await loginAdmin.resolve(null, { email: args.email, password: args.password, rememberMe: false }, ctx)
+
+		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith(ctx, expect.objectContaining({ turnstileToken: undefined }))
 	})
 
 	it('closes the session and rethrows as an internal error when the transaction fails', async () => {

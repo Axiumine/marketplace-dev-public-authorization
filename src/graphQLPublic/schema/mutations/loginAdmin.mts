@@ -5,27 +5,73 @@ import { generateAccessToken, generateRefreshToken } from '@axiumine/koa-utils/l
 import { tryCatchRethrow } from '@axiumine/koa-utils/lib/tryCatchRethrow'
 import { IRedisDataAdmin } from '@axiumine/marketplace-common/others/Redis/IRedisDataAdmin'
 import { TIER } from '@axiumine/marketplace-common/others/Tier'
+import { guardPublicLogin } from '@lib/access/guardPublicLogin.mjs'
 import { tryLoginAdmin } from '@lib/db/login/tryLoginAdmin.mjs'
 import { updateAdminLoginStats } from '@lib/db/login/updateAdminLoginStats.mjs'
 import { setRedisLoginSessionAdmin } from '@lib/db/redis/setRedisLoginSessionAdmin.mjs'
 import { GraphQLBoolean, GraphQLError, GraphQLNonNull, GraphQLString } from 'graphql'
+import { Context } from 'koa'
 import mongoose from 'mongoose'
 
 interface IArgs {
 	email: string
 	password: string
 	rememberMe: boolean
+	turnstileToken?: string
 }
 
+/**
+ * Per hour, per source IP — and the tightest of the three login resolvers on purpose.
+ *
+ * There are a handful of operator accounts on the whole platform and they sign in from a handful of
+ * places, so a low ceiling costs a real person nothing here. What it buys is the most valuable session the
+ * platform mints being the most expensive one to guess at.
+ */
+const PER_IP_PER_HOUR = 10
+
+/**
+ * Per hour, per email address — higher than the per-IP figure on purpose.
+ *
+ * ⚠️ Anyone who knows an operator's address can spend this budget on their behalf, so the number is a
+ * lockout risk before it is a defence, and locking out the people who administer the platform is worse than
+ * locking out one customer: they are also the ones who would respond to the attack. At 30 it stays out of
+ * the way of somebody mistyping a password all morning, while still capping a *distributed* attack on one
+ * account — and at `SALT_ROUNDS = 14`, 30 bcrypt verifications an hour is not a search anyone finishes.
+ */
+const PER_EMAIL_PER_HOUR = 30
+
+/**
+ * Logs a platform operator in.
+ *
+ * ⚠️ **`turnstileToken` is nullable, and the gate still holds.** `assertTurnstile` verifies a token only
+ * when this process holds a secret key of its own, so a developer machine with no key configured accepts
+ * the tokenless request that a browser with no site key configured sends. A deployment that has the secret
+ * rejects it. The client cannot weaken the gate by omitting the field — it can only fail to help.
+ */
 export const loginAdmin = {
 	type: new GraphQLNonNull(LoginAppType),
 	args: {
 		email: { type: new GraphQLNonNull(GraphQLString) },
 		password: { type: new GraphQLNonNull(GraphQLString) },
-		rememberMe: { type: new GraphQLNonNull(GraphQLBoolean) }
+		rememberMe: { type: new GraphQLNonNull(GraphQLBoolean) },
+		turnstileToken: { type: GraphQLString }
 	},
-	async resolve(_: unknown, args: IArgs, ctx: IContextLogin) {
-		const { email, password, rememberMe } = args
+	// `IContextLogin` is koa-utils' two-method view of the cookie jar and carries no `ip`, which the rate
+	// limiter buckets on. The value Apollo hands every resolver here is the whole Koa context (see the
+	// `async context()` in src/index.mts), so the intersection is a widening of the type to what is
+	// already being passed, not a cast — `setLoginCookies` keeps type-checking against the narrow half.
+	async resolve(_: unknown, args: IArgs, ctx: Context & IContextLogin) {
+		const { email, password, rememberMe, turnstileToken } = args
+
+		// Before the transaction and before bcrypt: the point of the counter is that a refused caller costs
+		// this process one Redis INCR, not a Mongo session plus a 14-round hash comparison.
+		await guardPublicLogin(ctx, {
+			bucket: 'loginAdmin',
+			email: email.trim().toLowerCase(),
+			turnstileToken,
+			perIpPerHour: PER_IP_PER_HOUR,
+			perEmailPerHour: PER_EMAIL_PER_HOUR
+		})
 
 		// Never observable: `refreshToken` is not part of the returned object below (only
 		// `accessToken`, `onboardingStep` and `onboardingDone` are), and the happy path always
