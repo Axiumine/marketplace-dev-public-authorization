@@ -160,6 +160,30 @@ async function seedAdmin(login: Record<string, unknown> = {}, extra: Record<stri
 	return { _id, email }
 }
 
+/**
+ * Every login mutation on this service is metered by `guardPublicLogin` into a **fixed one-hour
+ * window keyed by IP**, and this whole suite drives them from one loopback address. `loginAdmin`
+ * allows ten attempts per IP per hour and the suite spends four of them, so the third run started
+ * inside the same hour trips the limiter and reports `Too Many Requests` on assertions that are
+ * about credentials, a disabled flag or a session hash — nothing to do with rate limiting. A suite
+ * that turns red because it was re-run is worse than no suite at all.
+ *
+ * So the window is dropped before the run and the keys are registered for the `afterAll` drain: a
+ * run neither inherits a counter nor leaves one behind. The per-email counters need none of this —
+ * every seed gets a fresh `itest-<uuid>@marketplace.invalid`, so no two runs ever share one.
+ *
+ * ⚠️ **Two spellings of loopback, deliberately.** The identity is whatever `ctx.ip` reports, and
+ * Node listens on the dual-stack wildcard here, so an IPv4 client arrives as `::ffff:127.0.0.1` —
+ * a platform detail rather than a promise. Deleting a key that was never there costs one `DEL`,
+ * and one key per command because a multi-key `DEL` would CROSSSLOT on the cluster.
+ */
+const LOGIN_BUCKETS = ['login', 'loginAdmin', 'loginUser'] as const
+const LOOPBACK_IPS = ['::ffff:127.0.0.1', '127.0.0.1']
+
+function rateLimitIpKeys() {
+	return LOGIN_BUCKETS.flatMap((bucket) => LOOPBACK_IPS.map((ip) => `${REDIS_KEY}rl:${bucket}:ip:${ip}`))
+}
+
 /** The refresh token Koa just set, read back out of the Set-Cookie headers. */
 function refreshTokenFrom(setCookie: string[]) {
 	const header = setCookie.find((cookie) => cookie.startsWith('refresh_token='))
@@ -175,6 +199,8 @@ beforeAll(async () => {
 	const address = httpServer.address() as AddressInfo | null
 	if (!address || typeof address === 'string') throw new Error('no TCP address on the booted server')
 	base = `http://127.0.0.1:${address.port}`
+
+	for (const key of rateLimitIpKeys()) await redisClient.del(track(key))
 
 	passwordHash = await bcrypt.hash(PASSWORD, SALT_ROUNDS)
 })
@@ -620,6 +646,40 @@ describe('loginAdmin on a repeat visit (funUpdateLoginStats "not the first login
 		expect(doc?.login.firstLogin).toBeUndefined()
 		expect(doc?.login.lastLogin.getTime()).toBeGreaterThan(priorLastLogin.getTime())
 		expect(doc?.login.rememberMe).toBe(true)
+	})
+})
+
+// guardPublicLogin has its own unit tests, and so does assertUnderRateLimit. What neither can show is
+// that the guard is actually *in front of* the resolver on the wired server, ahead of the database
+// lookup — a resolver that imported it and never awaited it would pass both. This block is the
+// end-to-end proof, and it runs last because it deliberately exhausts a window the tests above spend.
+describe('the login limiter is in front of the resolver on the live server', () => {
+	const mutation = `
+		mutation LoginAdmin($email: String!, $password: String!, $rememberMe: Boolean!) {
+			loginAdmin(email: $email, password: $password, rememberMe: $rememberMe) { accessToken }
+		}
+	`
+
+	it('answers Too Many Requests for credentials that are otherwise valid', async () => {
+		// A seeded admin with the right password: every other reason this mutation can refuse is
+		// ruled out, so a refusal here can only be the limiter.
+		const { email } = await seedAdmin()
+		const adminKeys = rateLimitIpKeys().filter((key) => key.includes(':loginAdmin:'))
+
+		// The window is spent by writing the counter rather than by firing ten logins: each real
+		// attempt costs a bcrypt verify at SALT_ROUNDS = 14, and the counter is the only state the
+		// guard reads. The value is far above any ceiling this resolver could hold, so the test does
+		// not restate a constant that lives in loginAdmin.mts. EX 60 in case the drain never runs.
+		for (const key of adminKeys) await redisClient.set(key, '1000', { EX: 60 })
+
+		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: false })
+
+		expect(json.data?.loginAdmin ?? null).toBeNull()
+		expect(json.errors?.[0].message).toBe('Too Many Requests')
+		// Refused before anything was minted — same observable as the disabled-admin case above.
+		expect(setCookie.find((cookie) => cookie.startsWith('refresh_token='))).toBeUndefined()
+
+		for (const key of adminKeys) await redisClient.del(key)
 	})
 })
 
