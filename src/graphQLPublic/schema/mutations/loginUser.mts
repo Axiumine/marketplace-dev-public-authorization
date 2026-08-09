@@ -52,12 +52,11 @@ const PER_EMAIL_PER_HOUR = 60
  * keeps working unchanged. `assertTier` on each resource service is what keeps this token out of the
  * ShopOwner and Admin APIs.
  *
- * ⚠️ **This is the only one of the three login resolvers that is rate-limited and captcha-gated.**
- * `login` and `loginAdmin` next door are called by two shipped apps that mint no Turnstile token, so
- * gating them is a coordinated frontend change that has not been made; `marketplace-user` mints one, so
- * this resolver can be closed today and is. The inconsistency is knowingly temporary and the fix for the
- * other two is the same three lines plus a widget on each form. Until then, bcrypt at `SALT_ROUNDS = 14`
- * is all that makes a password-guessing flood expensive on those two, and that is not enough.
+ * All three login resolvers are rate-limited and captcha-gated now; this one was first, because
+ * `marketplace-user` was the only app minting a Turnstile token when the guard was written. What still
+ * differs is the numbers: the ceilings are per-resolver constants, and `loginAdmin` sits lower than these
+ * because there are a handful of operator accounts and a stolen operator session is the worst outcome on
+ * the platform.
  *
  * ⚠️ **`turnstileToken` is nullable, and the gate still holds.** `assertTurnstile` verifies a token only
  * when this process holds a secret key of its own, so a developer machine with no key configured accepts
