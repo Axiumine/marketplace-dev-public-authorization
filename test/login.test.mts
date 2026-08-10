@@ -78,12 +78,17 @@ describe('login', () => {
 		const result = await login.resolve(null, args, ctx)
 
 		expect(tryLoginShopOwner).toHaveBeenCalledExactlyOnceWith(args.email, args.password, { withTransaction, endSession })
-		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
-			_id: _id.toString(),
-			email: args.email,
-			tier: 'shopOwner',
-			onboardingStep: 'personalData'
-		})
+		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
+			ACCESS,
+			REFRESH,
+			{
+				_id: _id.toString(),
+				email: args.email,
+				tier: 'shopOwner',
+				onboardingStep: 'personalData'
+			},
+			true
+		)
 		expect(updateLoginStats).toHaveBeenCalledExactlyOnceWith(_id, lastLogin, true, { withTransaction, endSession })
 		expect(setLoginCookies).toHaveBeenCalledExactlyOnceWith(ctx, REFRESH)
 		expect(endSession).toHaveBeenCalledTimes(1)
@@ -102,11 +107,16 @@ describe('login', () => {
 
 		await login.resolve(null, args, ctx)
 
-		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
-			_id: _id.toString(),
-			email: args.email,
-			tier: 'shopOwner'
-		})
+		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
+			ACCESS,
+			REFRESH,
+			{
+				_id: _id.toString(),
+				email: args.email,
+				tier: 'shopOwner'
+			},
+			true
+		)
 		expect(updateLoginStats).toHaveBeenCalledExactlyOnceWith(_id, null, true, expect.anything())
 	})
 

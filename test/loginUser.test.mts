@@ -81,11 +81,16 @@ describe('loginUser', () => {
 		expect(tryLoginUser).toHaveBeenCalledExactlyOnceWith(args.email, args.password, { withTransaction, endSession })
 		// tier: 'user' is the whole point of a third resolver — the session hash goes to the shared
 		// REDIS_KEY prefix, and this field is what keeps the token out of the other two tiers' APIs.
-		expect(setRedisLoginSessionUser).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
-			_id: _id.toString(),
-			email: args.email,
-			tier: 'user'
-		})
+		expect(setRedisLoginSessionUser).toHaveBeenCalledExactlyOnceWith(
+			ACCESS,
+			REFRESH,
+			{
+				_id: _id.toString(),
+				email: args.email,
+				tier: 'user'
+			},
+			args.rememberMe
+		)
 		expect(updateUserLoginStats).toHaveBeenCalledExactlyOnceWith(_id, lastLogin, true, { withTransaction, endSession })
 		expect(setLoginCookies).toHaveBeenCalledExactlyOnceWith(ctx, REFRESH)
 		expect(endSession).toHaveBeenCalledTimes(1)

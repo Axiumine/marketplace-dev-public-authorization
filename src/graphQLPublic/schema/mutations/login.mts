@@ -103,7 +103,7 @@ export const login = {
 				accessToken = generateAccessToken()
 				const refreshToken = generateRefreshToken()
 
-				await setRedisLoginSessionShopOwner(accessToken, refreshToken, redisData)
+				await setRedisLoginSessionShopOwner(accessToken, refreshToken, redisData, rememberMe)
 				await updateLoginStats(id as Types.ObjectId, lastLogin, rememberMe, session)
 
 				setLoginCookies(ctx, refreshToken)

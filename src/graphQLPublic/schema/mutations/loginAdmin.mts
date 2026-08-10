@@ -106,7 +106,7 @@ export const loginAdmin = {
 				refreshToken = generateRefreshToken()
 				const lastLogin = admin.login.lastLogin ?? null
 
-				await setRedisLoginSessionAdmin(accessToken, refreshToken, redisData)
+				await setRedisLoginSessionAdmin(accessToken, refreshToken, redisData, rememberMe)
 				await updateAdminLoginStats(id, lastLogin, rememberMe, session)
 
 				setLoginCookies(ctx, refreshToken)

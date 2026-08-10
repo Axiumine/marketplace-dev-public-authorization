@@ -377,7 +377,8 @@ async function expectSessionOnCluster(
 	setCookie: string[],
 	_id: mongoose.Types.ObjectId,
 	email: string,
-	tier: string
+	tier: string,
+	sessionCapDays: string
 ) {
 	expect(accessToken).not.toBe('')
 
@@ -385,7 +386,17 @@ async function expectSessionOnCluster(
 	const refreshKey = track(sessionKey(`refresh:${refreshTokenFrom(setCookie)}`))
 
 	expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email, tier })
-	expect(await redisClient.hGetAll(refreshKey)).toEqual({ _id: _id.toHexString(), tier })
+	expect(await redisClient.hGetAll(refreshKey)).toEqual({
+		_id: _id.toHexString(),
+		tier,
+		familyId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+		originalLogin: expect.stringMatching(/^\d{13}$/),
+		sessionCapDays
+	})
+
+	// The absolute cap is measured from this stamp, so a clock read on the wrong side of a serialisation
+	// would only show up here — a real login has to have been stamped within seconds of this assertion.
+	expect(Number((await redisClient.hGetAll(refreshKey)).originalLogin)).toBeGreaterThan(Date.now() - 60_000)
 
 	const accessTtl = await redisClient.ttl(accessKey)
 	expect(accessTtl).toBeGreaterThanOrEqual(ACCESS_TTL_MIN - 5)
@@ -415,7 +426,7 @@ describe('login writes a real session on the cluster', () => {
 
 		// setRedisLoginSessionShopOwner writes the whole IRedisDataShopOwner into the access
 		// hash and only the _id into the refresh one.
-		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.shopOwner)
+		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.shopOwner, '1')
 
 		// updateLoginStats ran in the same transaction, which therefore really committed.
 		// rememberMe: false takes the $unset branch, so the field must not be there at all.
@@ -538,7 +549,7 @@ describe('loginAdmin writes a real session on the cluster', () => {
 
 		const { accessToken } = json.data?.loginAdmin as { accessToken: string }
 
-		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.admin)
+		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.admin, '1')
 
 		const doc = await db().collection('admin').findOne({ _id })
 		expect(doc?.login.lastLogin).toBeInstanceOf(Date)
