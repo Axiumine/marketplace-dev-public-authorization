@@ -10,7 +10,6 @@ import { tryLoginAdmin } from '@lib/db/login/tryLoginAdmin.mjs'
 import { updateAdminLoginStats } from '@lib/db/login/updateAdminLoginStats.mjs'
 import { setRedisLoginSessionAdmin } from '@lib/db/redis/setRedisLoginSessionAdmin.mjs'
 import { GraphQLBoolean, GraphQLError, GraphQLNonNull, GraphQLString } from 'graphql'
-import { Context } from 'koa'
 import mongoose from 'mongoose'
 
 interface IArgs {
@@ -21,16 +20,8 @@ interface IArgs {
 }
 
 /**
- * Per hour, per source IP — and the tightest of the three login resolvers on purpose.
- *
- * There are a handful of operator accounts on the whole platform and they sign in from a handful of
- * places, so a low ceiling costs a real person nothing here. What it buys is the most valuable session the
- * platform mints being the most expensive one to guess at.
- */
-const PER_IP_PER_HOUR = 10
-
-/**
- * Per hour, per email address — higher than the per-IP figure on purpose.
+ * Per hour, per email address — the only counter this process keeps, the per-address half being
+ * nginx's (`mkt_admin_auth`), which is tighter here than on the other two vhosts.
  *
  * ⚠️ Anyone who knows an operator's address can spend this budget on their behalf, so the number is a
  * lockout risk before it is a defence, and locking out the people who administer the platform is worse than
@@ -56,20 +47,22 @@ export const loginAdmin = {
 		rememberMe: { type: new GraphQLNonNull(GraphQLBoolean) },
 		turnstileToken: { type: GraphQLString }
 	},
-	// `IContextLogin` is koa-utils' two-method view of the cookie jar and carries no `ip`, which the rate
-	// limiter buckets on. The value Apollo hands every resolver here is the whole Koa context (see the
-	// `async context()` in src/index.mts), so the intersection is a widening of the type to what is
-	// already being passed, not a cast — `setLoginCookies` keeps type-checking against the narrow half.
-	async resolve(_: unknown, args: IArgs, ctx: Context & IContextLogin) {
+	// `IContextLogin` is koa-utils' two-method view of the cookie jar, and the whole of what this resolver
+	// needs: Apollo hands it the entire Koa context (see the `async context()` in src/index.mts) and
+	// declaring the narrow half is what stops anything but `setLoginCookies` reading off it. It used to be
+	// intersected with koa's `Context` for one reason — the caller's address, which the rate limiter
+	// bucketed on. That bucket is gone: `app.proxy` is off, so the address reachable here is nginx's own and
+	// metering it metered the whole platform. The per-caller limit is the edge's now, and nothing in this
+	// file reads a request property at all.
+	async resolve(_: unknown, args: IArgs, ctx: IContextLogin) {
 		const { email, password, rememberMe, turnstileToken } = args
 
 		// Before the transaction and before bcrypt: the point of the counter is that a refused caller costs
 		// this process one Redis INCR, not a Mongo session plus a 14-round hash comparison.
-		await guardPublicLogin(ctx, {
+		await guardPublicLogin({
 			bucket: 'loginAdmin',
 			email: email.trim().toLowerCase(),
 			turnstileToken,
-			perIpPerHour: PER_IP_PER_HOUR,
 			perEmailPerHour: PER_EMAIL_PER_HOUR
 		})
 
@@ -113,7 +106,7 @@ export const loginAdmin = {
 				refreshToken = generateRefreshToken()
 				const lastLogin = admin.login.lastLogin ?? null
 
-				await setRedisLoginSessionAdmin(accessToken, refreshToken, redisData)
+				await setRedisLoginSessionAdmin(accessToken, refreshToken, redisData, rememberMe)
 				await updateAdminLoginStats(id, lastLogin, rememberMe, session)
 
 				setLoginCookies(ctx, refreshToken)

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 
 import { redisClient } from '@axiumine/koa-utils/dataSources/Redis'
@@ -13,6 +13,7 @@ import {
 import { ALGORITHM_DETERMINISTIC } from '@axiumine/marketplace-common/encryption/EncryptionAlgorithm'
 import { encryptValue } from '@axiumine/marketplace-common/encryption/fieldEncryption'
 import { isCiphertext } from '@axiumine/marketplace-common/encryption/isCiphertext'
+import { sessionKey } from '@axiumine/marketplace-common/others/sessionKeys'
 import { TIER } from '@axiumine/marketplace-common/others/Tier'
 import bcrypt from '@node-rs/bcrypt'
 import type { Server } from 'http'
@@ -161,27 +162,22 @@ async function seedAdmin(login: Record<string, unknown> = {}, extra: Record<stri
 }
 
 /**
- * Every login mutation on this service is metered by `guardPublicLogin` into a **fixed one-hour
- * window keyed by IP**, and this whole suite drives them from one loopback address. `loginAdmin`
- * allows ten attempts per IP per hour and the suite spends four of them, so the third run started
- * inside the same hour trips the limiter and reports `Too Many Requests` on assertions that are
- * about credentials, a disabled flag or a session hash — nothing to do with rate limiting. A suite
- * that turns red because it was re-run is worse than no suite at all.
+ * The Redis counter `guardPublicLogin` keeps, as the running service writes it: one hour, one key,
+ * `rl:<bucket>:email:<sha256 of the address>`.
  *
- * So the window is dropped before the run and the keys are registered for the `afterAll` drain: a
- * run neither inherits a counter nor leaves one behind. The per-email counters need none of this —
- * every seed gets a fresh `itest-<uuid>@marketplace.invalid`, so no two runs ever share one.
+ * ⚠️ **The digest is computed here rather than imported from `marketplace-common`.** Calling the
+ * production helper would make this suite agree with it whatever it did, including nothing at all;
+ * `createHash` in the test names the algorithm independently, and the key only matches if both
+ * sides really do SHA-256.
  *
- * ⚠️ **Two spellings of loopback, deliberately.** The identity is whatever `ctx.ip` reports, and
- * Node listens on the dual-stack wildcard here, so an IPv4 client arrives as `::ffff:127.0.0.1` —
- * a platform detail rather than a promise. Deleting a key that was never there costs one `DEL`,
- * and one key per command because a multi-key `DEL` would CROSSSLOT on the cluster.
+ * **Nothing has to be drained before a run any more.** The counter used to be keyed on `ctx.ip`,
+ * which is one loopback address for the whole suite — so two runs inside an hour shared a budget
+ * and the second went red on assertions about credentials, a disabled flag or a session hash. That
+ * bucket is gone (the per-address half is nginx's now, `app.proxy` being off). Every seed gets a
+ * fresh `itest-<uuid>@marketplace.invalid`, so no two runs, and no two tests, ever share a counter.
  */
-const LOGIN_BUCKETS = ['login', 'loginAdmin', 'loginUser'] as const
-const LOOPBACK_IPS = ['::ffff:127.0.0.1', '127.0.0.1']
-
-function rateLimitIpKeys() {
-	return LOGIN_BUCKETS.flatMap((bucket) => LOOPBACK_IPS.map((ip) => `${REDIS_KEY}rl:${bucket}:ip:${ip}`))
+function rateLimitEmailKey(bucket: string, email: string) {
+	return `${REDIS_KEY}rl:${bucket}:email:${createHash('sha256').update(email).digest('hex')}`
 }
 
 /** The refresh token Koa just set, read back out of the Set-Cookie headers. */
@@ -199,8 +195,6 @@ beforeAll(async () => {
 	const address = httpServer.address() as AddressInfo | null
 	if (!address || typeof address === 'string') throw new Error('no TCP address on the booted server')
 	base = `http://127.0.0.1:${address.port}`
-
-	for (const key of rateLimitIpKeys()) await redisClient.del(track(key))
 
 	passwordHash = await bcrypt.hash(PASSWORD, SALT_ROUNDS)
 })
@@ -383,15 +377,26 @@ async function expectSessionOnCluster(
 	setCookie: string[],
 	_id: mongoose.Types.ObjectId,
 	email: string,
-	tier: string
+	tier: string,
+	sessionCapDays: string
 ) {
 	expect(accessToken).not.toBe('')
 
-	const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
-	const refreshKey = track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+	const accessKey = track(sessionKey(`access:${accessToken}`))
+	const refreshKey = track(sessionKey(`refresh:${refreshTokenFrom(setCookie)}`))
 
 	expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email, tier })
-	expect(await redisClient.hGetAll(refreshKey)).toEqual({ _id: _id.toHexString(), tier })
+	expect(await redisClient.hGetAll(refreshKey)).toEqual({
+		_id: _id.toHexString(),
+		tier,
+		familyId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+		originalLogin: expect.stringMatching(/^\d{13}$/),
+		sessionCapDays
+	})
+
+	// The absolute cap is measured from this stamp, so a clock read on the wrong side of a serialisation
+	// would only show up here — a real login has to have been stamped within seconds of this assertion.
+	expect(Number((await redisClient.hGetAll(refreshKey)).originalLogin)).toBeGreaterThan(Date.now() - 60_000)
 
 	const accessTtl = await redisClient.ttl(accessKey)
 	expect(accessTtl).toBeGreaterThanOrEqual(ACCESS_TTL_MIN - 5)
@@ -421,7 +426,7 @@ describe('login writes a real session on the cluster', () => {
 
 		// setRedisLoginSessionShopOwner writes the whole IRedisDataShopOwner into the access
 		// hash and only the _id into the refresh one.
-		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.shopOwner)
+		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.shopOwner, '1')
 
 		// updateLoginStats ran in the same transaction, which therefore really committed.
 		// rememberMe: false takes the $unset branch, so the field must not be there at all.
@@ -438,8 +443,8 @@ describe('login writes a real session on the cluster', () => {
 		expect(json.errors).toBeUndefined()
 
 		const { accessToken } = json.data?.login as { accessToken: string }
-		const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
-		track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+		const accessKey = track(sessionKey(`access:${accessToken}`))
+		track(sessionKey(`refresh:${refreshTokenFrom(setCookie)}`))
 
 		expect(await redisClient.hGetAll(accessKey)).toEqual({
 			_id: _id.toHexString(),
@@ -514,11 +519,11 @@ describe('login on a repeat visit (funUpdateLoginStats "not the first login" bra
 		// `login` mints a refresh session server-side with the 90-day REFRESH_TOKEN_EXPIRY. This test
 		// only cares about the login timestamps, but the key exists all the same — register it here,
 		// before the assertions, or every run of this test strands one key in the cluster for 90 days.
-		track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+		track(sessionKey(`refresh:${refreshTokenFrom(setCookie)}`))
 		expect(json.errors).toBeUndefined()
 
 		const { accessToken } = json.data?.login as { accessToken: string }
-		track(`${REDIS_KEY}access:${accessToken}`)
+		track(sessionKey(`access:${accessToken}`))
 
 		const doc = await db().collection('shopOwner').findOne({ _id })
 		// The $set only touches firstLogin when lastLogin was null on entry — it was not here, so
@@ -544,7 +549,7 @@ describe('loginAdmin writes a real session on the cluster', () => {
 
 		const { accessToken } = json.data?.loginAdmin as { accessToken: string }
 
-		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.admin)
+		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.admin, '1')
 
 		const doc = await db().collection('admin').findOne({ _id })
 		expect(doc?.login.lastLogin).toBeInstanceOf(Date)
@@ -634,11 +639,11 @@ describe('loginAdmin on a repeat visit (funUpdateLoginStats "not the first login
 		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: true })
 		// Same as the `login` counterpart above: the refresh session is minted whether or not this
 		// test looks at it, so it has to be tracked before the first assertion that can throw.
-		track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+		track(sessionKey(`refresh:${refreshTokenFrom(setCookie)}`))
 		expect(json.errors).toBeUndefined()
 
 		const { accessToken } = json.data?.loginAdmin as { accessToken: string }
-		track(`${REDIS_KEY}access:${accessToken}`)
+		track(sessionKey(`access:${accessToken}`))
 
 		const doc = await db().collection('admin').findOne({ _id })
 		// lastLogin was already non-null on entry, so the `if (lastLogin === null)` branch that sets
@@ -664,13 +669,17 @@ describe('the login limiter is in front of the resolver on the live server', () 
 		// A seeded admin with the right password: every other reason this mutation can refuse is
 		// ruled out, so a refusal here can only be the limiter.
 		const { email } = await seedAdmin()
-		const adminKeys = rateLimitIpKeys().filter((key) => key.includes(':loginAdmin:'))
+		const adminKey = rateLimitEmailKey('loginAdmin', email)
 
-		// The window is spent by writing the counter rather than by firing ten logins: each real
+		// The window is spent by writing the counter rather than by firing thirty logins: each real
 		// attempt costs a bcrypt verify at SALT_ROUNDS = 14, and the counter is the only state the
 		// guard reads. The value is far above any ceiling this resolver could hold, so the test does
 		// not restate a constant that lives in loginAdmin.mts. EX 60 in case the drain never runs.
-		for (const key of adminKeys) await redisClient.set(key, '1000', { EX: 60 })
+		//
+		// ⚠️ Writing this key is also what proves the shape: a service that hashed differently, or
+		// that still keyed on an address, would simply not find the counter and the login would
+		// succeed.
+		await redisClient.set(adminKey, '1000', { EX: 60 })
 
 		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: false })
 
@@ -679,7 +688,7 @@ describe('the login limiter is in front of the resolver on the live server', () 
 		// Refused before anything was minted — same observable as the disabled-admin case above.
 		expect(setCookie.find((cookie) => cookie.startsWith('refresh_token='))).toBeUndefined()
 
-		for (const key of adminKeys) await redisClient.del(key)
+		await redisClient.del(adminKey)
 	})
 })
 
@@ -688,8 +697,8 @@ describe('setRedisLoginSession against the live cluster', () => {
 		const _id = new mongoose.Types.ObjectId().toHexString()
 		const accessToken = randomUUID()
 		const refreshToken = randomUUID()
-		const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
-		const refreshKey = track(`${REDIS_KEY}refresh:${refreshToken}`)
+		const accessKey = track(sessionKey(`access:${accessToken}`))
+		const refreshKey = track(sessionKey(`refresh:${refreshToken}`))
 
 		await setRedisLoginSession(accessToken, refreshToken, { _id, email: 'oste@marketplace.test' }, { _id })
 
@@ -704,8 +713,8 @@ describe('setRedisLoginSession against the live cluster', () => {
 	it('removes both keys when the write fails', async () => {
 		const accessToken = randomUUID()
 		const refreshToken = randomUUID()
-		const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
-		const refreshKey = track(`${REDIS_KEY}refresh:${refreshToken}`)
+		const accessKey = track(sessionKey(`access:${accessToken}`))
+		const refreshKey = track(sessionKey(`refresh:${refreshToken}`))
 
 		await expect(setRedisLoginSession(accessToken, refreshToken, {}, {})).rejects.toThrow()
 

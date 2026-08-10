@@ -1,5 +1,4 @@
 import type { IContextLogin } from '@axiumine/koa-utils/graphQL/schema/context/IContextLogin'
-import type { Context } from 'koa'
 import { Types } from 'mongoose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -44,7 +43,11 @@ vi.mock('@sentry/node', () => ({ captureException }))
 const { loginAdmin } = await import('../src/graphQLPublic/schema/mutations/loginAdmin.mts')
 
 const _id = new Types.ObjectId('507f1f77bcf86cd799439011')
-const ctx = { ip: '203.0.113.7', cookies: { set: vi.fn() } } as unknown as Context & IContextLogin
+// ⚠️ No `ip` on this fixture, and that is the point: the resolver's context parameter is
+// `IContextLogin`, koa-utils' two-method view of the cookie jar, so nothing in the file can read a
+// request property. The per-caller rate limit is nginx's — `app.proxy` is off, so the address this
+// process sees is the proxy's own.
+const ctx = { cookies: { set: vi.fn() } } as unknown as IContextLogin
 const args = { email: 'operator@marketplace.test', password: 'clear', rememberMe: false, turnstileToken: 'turnstile-token' }
 
 let log: ReturnType<typeof vi.spyOn>
@@ -73,11 +76,16 @@ describe('loginAdmin', () => {
 		const result = await loginAdmin.resolve(null, args, ctx)
 
 		expect(tryLoginAdmin).toHaveBeenCalledExactlyOnceWith(args.email, args.password, { withTransaction, endSession })
-		expect(setRedisLoginSessionAdmin).toHaveBeenCalledExactlyOnceWith(ACCESS, REFRESH, {
-			_id: _id.toString(),
-			email: args.email,
-			tier: 'admin'
-		})
+		expect(setRedisLoginSessionAdmin).toHaveBeenCalledExactlyOnceWith(
+			ACCESS,
+			REFRESH,
+			{
+				_id: _id.toString(),
+				email: args.email,
+				tier: 'admin'
+			},
+			args.rememberMe
+		)
 		expect(updateAdminLoginStats).toHaveBeenCalledExactlyOnceWith(_id, lastLogin, false, { withTransaction, endSession })
 		expect(setLoginCookies).toHaveBeenCalledExactlyOnceWith(ctx, REFRESH)
 		expect(endSession).toHaveBeenCalledTimes(1)
@@ -104,19 +112,18 @@ describe('loginAdmin', () => {
 		expect(setLoginCookies).not.toHaveBeenCalled()
 	})
 
-	// The limits are policy, so they are asserted rather than left to whoever edits the constants next, and
-	// they are the tightest of the three tiers on purpose: a handful of operator accounts sign in from a
-	// handful of places, and a stolen operator session is the worst outcome on the platform.
-	it('meters on the loginAdmin bucket at 10 per IP and 30 per email, with a normalised address', async () => {
+	// The limit is policy, so it is asserted rather than left to whoever edits the constant next, and it is
+	// the tightest of the three tiers on purpose: a handful of operator accounts sign in from a handful of
+	// places, and a stolen operator session is the worst outcome on the platform.
+	it('meters on the loginAdmin bucket at 30 per email, with a normalised address', async () => {
 		tryLoginAdmin.mockResolvedValueOnce({ _id, login: {} })
 
 		await loginAdmin.resolve(null, { ...args, email: '  Operator@Marketplace.TEST  ' }, ctx)
 
-		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith(ctx, {
+		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith({
 			bucket: 'loginAdmin',
 			email: 'operator@marketplace.test',
 			turnstileToken: args.turnstileToken,
-			perIpPerHour: 10,
 			perEmailPerHour: 30
 		})
 	})
@@ -129,7 +136,7 @@ describe('loginAdmin', () => {
 
 		await loginAdmin.resolve(null, { email: args.email, password: args.password, rememberMe: false }, ctx)
 
-		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith(ctx, expect.objectContaining({ turnstileToken: undefined }))
+		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ turnstileToken: undefined }))
 	})
 
 	it('closes the session and rethrows as an internal error when the transaction fails', async () => {
