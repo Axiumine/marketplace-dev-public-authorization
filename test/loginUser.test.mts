@@ -1,5 +1,4 @@
 import type { IContextLogin } from '@axiumine/koa-utils/graphQL/schema/context/IContextLogin'
-import type { Context } from 'koa'
 import { Types } from 'mongoose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -44,7 +43,11 @@ vi.mock('@sentry/node', () => ({ captureException }))
 const { loginUser } = await import('../src/graphQLPublic/schema/mutations/loginUser.mts')
 
 const _id = new Types.ObjectId('507f1f77bcf86cd799439011')
-const ctx = { ip: '203.0.113.7', cookies: { set: vi.fn() } } as unknown as Context & IContextLogin
+// ⚠️ No `ip` on this fixture, and that is the point: the resolver's context parameter is
+// `IContextLogin`, koa-utils' two-method view of the cookie jar, so nothing in the file can read a
+// request property. The per-caller rate limit is nginx's — `app.proxy` is off, so the address this
+// process sees is the proxy's own.
+const ctx = { cookies: { set: vi.fn() } } as unknown as IContextLogin
 const args = {
 	email: 'customer@marketplace.test',
 	password: 'clear',
@@ -104,19 +107,18 @@ describe('loginUser', () => {
 		expect(setLoginCookies).not.toHaveBeenCalled()
 	})
 
-	// The limits are policy, so they are asserted rather than left to whoever edits the constants next:
-	// 20 per IP is the counter doing the real work, and 60 per email is set high on purpose because
-	// anyone who knows an address can spend that budget and lock its owner out.
-	it('meters on the loginUser bucket at 20 per IP and 60 per email, with a normalised address', async () => {
+	// The limit is policy, so it is asserted rather than left to whoever edits the constant next: 60 per
+	// email is set high on purpose, because anyone who knows an address can spend that budget and lock its
+	// owner out. The per-caller half is nginx's `mkt_auth`.
+	it('meters on the loginUser bucket at 60 per email, with a normalised address', async () => {
 		tryLoginUser.mockResolvedValueOnce({ _id, login: {} })
 
 		await loginUser.resolve(null, { ...args, email: '  Customer@Marketplace.TEST  ' }, ctx)
 
-		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith(ctx, {
+		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith({
 			bucket: 'loginUser',
 			email: 'customer@marketplace.test',
 			turnstileToken: args.turnstileToken,
-			perIpPerHour: 20,
 			perEmailPerHour: 60
 		})
 	})

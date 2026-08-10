@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 
 import { redisClient } from '@axiumine/koa-utils/dataSources/Redis'
@@ -161,27 +161,22 @@ async function seedAdmin(login: Record<string, unknown> = {}, extra: Record<stri
 }
 
 /**
- * Every login mutation on this service is metered by `guardPublicLogin` into a **fixed one-hour
- * window keyed by IP**, and this whole suite drives them from one loopback address. `loginAdmin`
- * allows ten attempts per IP per hour and the suite spends four of them, so the third run started
- * inside the same hour trips the limiter and reports `Too Many Requests` on assertions that are
- * about credentials, a disabled flag or a session hash — nothing to do with rate limiting. A suite
- * that turns red because it was re-run is worse than no suite at all.
+ * The Redis counter `guardPublicLogin` keeps, as the running service writes it: one hour, one key,
+ * `rl:<bucket>:email:<sha256 of the address>`.
  *
- * So the window is dropped before the run and the keys are registered for the `afterAll` drain: a
- * run neither inherits a counter nor leaves one behind. The per-email counters need none of this —
- * every seed gets a fresh `itest-<uuid>@marketplace.invalid`, so no two runs ever share one.
+ * ⚠️ **The digest is computed here rather than imported from `marketplace-common`.** Calling the
+ * production helper would make this suite agree with it whatever it did, including nothing at all;
+ * `createHash` in the test names the algorithm independently, and the key only matches if both
+ * sides really do SHA-256.
  *
- * ⚠️ **Two spellings of loopback, deliberately.** The identity is whatever `ctx.ip` reports, and
- * Node listens on the dual-stack wildcard here, so an IPv4 client arrives as `::ffff:127.0.0.1` —
- * a platform detail rather than a promise. Deleting a key that was never there costs one `DEL`,
- * and one key per command because a multi-key `DEL` would CROSSSLOT on the cluster.
+ * **Nothing has to be drained before a run any more.** The counter used to be keyed on `ctx.ip`,
+ * which is one loopback address for the whole suite — so two runs inside an hour shared a budget
+ * and the second went red on assertions about credentials, a disabled flag or a session hash. That
+ * bucket is gone (the per-address half is nginx's now, `app.proxy` being off). Every seed gets a
+ * fresh `itest-<uuid>@marketplace.invalid`, so no two runs, and no two tests, ever share a counter.
  */
-const LOGIN_BUCKETS = ['login', 'loginAdmin', 'loginUser'] as const
-const LOOPBACK_IPS = ['::ffff:127.0.0.1', '127.0.0.1']
-
-function rateLimitIpKeys() {
-	return LOGIN_BUCKETS.flatMap((bucket) => LOOPBACK_IPS.map((ip) => `${REDIS_KEY}rl:${bucket}:ip:${ip}`))
+function rateLimitEmailKey(bucket: string, email: string) {
+	return `${REDIS_KEY}rl:${bucket}:email:${createHash('sha256').update(email).digest('hex')}`
 }
 
 /** The refresh token Koa just set, read back out of the Set-Cookie headers. */
@@ -199,8 +194,6 @@ beforeAll(async () => {
 	const address = httpServer.address() as AddressInfo | null
 	if (!address || typeof address === 'string') throw new Error('no TCP address on the booted server')
 	base = `http://127.0.0.1:${address.port}`
-
-	for (const key of rateLimitIpKeys()) await redisClient.del(track(key))
 
 	passwordHash = await bcrypt.hash(PASSWORD, SALT_ROUNDS)
 })
@@ -664,13 +657,17 @@ describe('the login limiter is in front of the resolver on the live server', () 
 		// A seeded admin with the right password: every other reason this mutation can refuse is
 		// ruled out, so a refusal here can only be the limiter.
 		const { email } = await seedAdmin()
-		const adminKeys = rateLimitIpKeys().filter((key) => key.includes(':loginAdmin:'))
+		const adminKey = rateLimitEmailKey('loginAdmin', email)
 
-		// The window is spent by writing the counter rather than by firing ten logins: each real
+		// The window is spent by writing the counter rather than by firing thirty logins: each real
 		// attempt costs a bcrypt verify at SALT_ROUNDS = 14, and the counter is the only state the
 		// guard reads. The value is far above any ceiling this resolver could hold, so the test does
 		// not restate a constant that lives in loginAdmin.mts. EX 60 in case the drain never runs.
-		for (const key of adminKeys) await redisClient.set(key, '1000', { EX: 60 })
+		//
+		// ⚠️ Writing this key is also what proves the shape: a service that hashed differently, or
+		// that still keyed on an address, would simply not find the counter and the login would
+		// succeed.
+		await redisClient.set(adminKey, '1000', { EX: 60 })
 
 		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: false })
 
@@ -679,7 +676,7 @@ describe('the login limiter is in front of the resolver on the live server', () 
 		// Refused before anything was minted — same observable as the disabled-admin case above.
 		expect(setCookie.find((cookie) => cookie.startsWith('refresh_token='))).toBeUndefined()
 
-		for (const key of adminKeys) await redisClient.del(key)
+		await redisClient.del(adminKey)
 	})
 })
 
