@@ -13,6 +13,7 @@ import {
 import { ALGORITHM_DETERMINISTIC } from '@axiumine/marketplace-common/encryption/EncryptionAlgorithm'
 import { encryptValue } from '@axiumine/marketplace-common/encryption/fieldEncryption'
 import { isCiphertext } from '@axiumine/marketplace-common/encryption/isCiphertext'
+import { sessionKey } from '@axiumine/marketplace-common/others/sessionKeys'
 import { TIER } from '@axiumine/marketplace-common/others/Tier'
 import bcrypt from '@node-rs/bcrypt'
 import type { Server } from 'http'
@@ -380,8 +381,8 @@ async function expectSessionOnCluster(
 ) {
 	expect(accessToken).not.toBe('')
 
-	const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
-	const refreshKey = track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+	const accessKey = track(sessionKey(`access:${accessToken}`))
+	const refreshKey = track(sessionKey(`refresh:${refreshTokenFrom(setCookie)}`))
 
 	expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email, tier })
 	expect(await redisClient.hGetAll(refreshKey)).toEqual({ _id: _id.toHexString(), tier })
@@ -431,8 +432,8 @@ describe('login writes a real session on the cluster', () => {
 		expect(json.errors).toBeUndefined()
 
 		const { accessToken } = json.data?.login as { accessToken: string }
-		const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
-		track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+		const accessKey = track(sessionKey(`access:${accessToken}`))
+		track(sessionKey(`refresh:${refreshTokenFrom(setCookie)}`))
 
 		expect(await redisClient.hGetAll(accessKey)).toEqual({
 			_id: _id.toHexString(),
@@ -507,11 +508,11 @@ describe('login on a repeat visit (funUpdateLoginStats "not the first login" bra
 		// `login` mints a refresh session server-side with the 90-day REFRESH_TOKEN_EXPIRY. This test
 		// only cares about the login timestamps, but the key exists all the same — register it here,
 		// before the assertions, or every run of this test strands one key in the cluster for 90 days.
-		track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+		track(sessionKey(`refresh:${refreshTokenFrom(setCookie)}`))
 		expect(json.errors).toBeUndefined()
 
 		const { accessToken } = json.data?.login as { accessToken: string }
-		track(`${REDIS_KEY}access:${accessToken}`)
+		track(sessionKey(`access:${accessToken}`))
 
 		const doc = await db().collection('shopOwner').findOne({ _id })
 		// The $set only touches firstLogin when lastLogin was null on entry — it was not here, so
@@ -627,11 +628,11 @@ describe('loginAdmin on a repeat visit (funUpdateLoginStats "not the first login
 		const { json, setCookie } = await gql(mutation, { email, password: PASSWORD, rememberMe: true })
 		// Same as the `login` counterpart above: the refresh session is minted whether or not this
 		// test looks at it, so it has to be tracked before the first assertion that can throw.
-		track(`${REDIS_KEY}refresh:${refreshTokenFrom(setCookie)}`)
+		track(sessionKey(`refresh:${refreshTokenFrom(setCookie)}`))
 		expect(json.errors).toBeUndefined()
 
 		const { accessToken } = json.data?.loginAdmin as { accessToken: string }
-		track(`${REDIS_KEY}access:${accessToken}`)
+		track(sessionKey(`access:${accessToken}`))
 
 		const doc = await db().collection('admin').findOne({ _id })
 		// lastLogin was already non-null on entry, so the `if (lastLogin === null)` branch that sets
@@ -685,8 +686,8 @@ describe('setRedisLoginSession against the live cluster', () => {
 		const _id = new mongoose.Types.ObjectId().toHexString()
 		const accessToken = randomUUID()
 		const refreshToken = randomUUID()
-		const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
-		const refreshKey = track(`${REDIS_KEY}refresh:${refreshToken}`)
+		const accessKey = track(sessionKey(`access:${accessToken}`))
+		const refreshKey = track(sessionKey(`refresh:${refreshToken}`))
 
 		await setRedisLoginSession(accessToken, refreshToken, { _id, email: 'oste@marketplace.test' }, { _id })
 
@@ -701,8 +702,8 @@ describe('setRedisLoginSession against the live cluster', () => {
 	it('removes both keys when the write fails', async () => {
 		const accessToken = randomUUID()
 		const refreshToken = randomUUID()
-		const accessKey = track(`${REDIS_KEY}access:${accessToken}`)
-		const refreshKey = track(`${REDIS_KEY}refresh:${refreshToken}`)
+		const accessKey = track(sessionKey(`access:${accessToken}`))
+		const refreshKey = track(sessionKey(`refresh:${refreshToken}`))
 
 		await expect(setRedisLoginSession(accessToken, refreshToken, {}, {})).rejects.toThrow()
 

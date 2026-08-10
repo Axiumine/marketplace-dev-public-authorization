@@ -1,6 +1,7 @@
 import { redisClient } from '@axiumine/koa-utils/dataSources/Redis'
 import { throwInternalError } from '@axiumine/koa-utils/graphQL/throw/throwInternalError'
 import { accessTokenExpiry, REFRESH_TOKEN_EXPIRY } from '@axiumine/koa-utils/lib/tokens'
+import { sessionKey } from '@axiumine/marketplace-common/others/sessionKeys'
 import * as Sentry from '@sentry/node'
 import * as dotenv from 'dotenv'
 
@@ -12,8 +13,12 @@ export async function setRedisLoginSession(
 	accessTokenKeyData: Record<string, string>,
 	refreshTokenData: Record<string, string>
 ) {
-	const keyAccess = `${process.env.REDIS_KEY}access:${accessToken}`
-	const keyRefresh = `${process.env.REDIS_KEY}refresh:${refreshToken}`
+	// Digests, not tokens (E13-S01), and of the **prefixed** value: `access:` and `refresh:` are what every
+	// reader presents, so hashing the bare uuid here would mint a session nothing on the platform can find.
+	// Writes are hashed-only from the cutover deploy — only reads carry a raw-key fallback, which is what
+	// lets the old shape drain instead of growing.
+	const keyAccess = sessionKey(`access:${accessToken}`)
+	const keyRefresh = sessionKey(`refresh:${refreshToken}`)
 
 	try {
 		const accTokenExp = accessTokenExpiry()
