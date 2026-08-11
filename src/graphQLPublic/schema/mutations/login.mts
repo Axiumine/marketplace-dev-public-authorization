@@ -114,7 +114,12 @@ export const login = {
 			// function returns after entering this catch block.
 			// Stryker disable next-line StringLiteral: dead reassignment, provably unobservable on any reachable path
 			accessToken = ''
-			console.log('catch', e)
+			// ⚠️ **Nothing is printed here** (E12-S20). This block opened with a `console.log('catch', e)`,
+			// which was a debug print rather than a decision: the caught value on this path is a database
+			// error today and carries nothing sensitive, and that is exactly why it went before an edit
+			// made it untrue. A failure on the login path has the caller's email address in scope, stdout
+			// is a log file, and console output becomes `event.breadcrumbs` on the Sentry event
+			// `captureException` builds two lines up. `loginUser.mts` has always had this shape.
 			tryCatchRethrow(e as Error | GraphQLError)
 		} finally {
 			await session.endSession()

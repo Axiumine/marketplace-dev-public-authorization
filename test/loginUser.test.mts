@@ -143,11 +143,10 @@ describe('loginUser', () => {
 		await expect(loginUser.resolve(null, args, ctx)).rejects.toThrow('Internal Server Error')
 
 		expect(captureException).toHaveBeenCalledWith(error)
-		// ⚠️ And nothing is printed, unlike `login.mts` next door, whose catch block opens with a
-		// `console.log('catch', e)`. That is the right way round — a login failure carries an email
-		// address and reaches stdout on a public service — so the absence is asserted rather than
-		// merely unasserted, and the day somebody copies the older resolver's catch block in here the
-		// test says so.
+		// ⚠️ And nothing is printed. This resolver was the only one of the three that never printed; since
+		// E12-S20 `login.mts` and `loginAdmin.mts` match it and assert the same absence. A login failure
+		// carries an email address and reaches stdout on a public service, so the absence is asserted
+		// rather than merely unasserted, and the day somebody adds a debug print here the test says so.
 		expect(log).not.toHaveBeenCalled()
 		expect(setLoginCookies).not.toHaveBeenCalled()
 		expect(endSession).toHaveBeenCalledTimes(1)
