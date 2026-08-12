@@ -2,33 +2,26 @@ import type { IContextLogin } from '@axiumine/koa-utils/graphQL/schema/context/I
 import { Types } from 'mongoose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const ACCESS = 'access-token'
-const REFRESH = 'refresh-token'
+// The tier-neutral half of the setup, shared with login.test.mts and loginAdmin.test.mts. It comes
+// through vi.hoisted rather than a plain import, and the helper's own comment says why.
+const {
+	ACCESS,
+	REFRESH,
+	guardPublicLogin,
+	setLoginCookies,
+	captureException,
+	startSession,
+	withTransaction,
+	endSession,
+	mongooseWithMockedSession,
+	resetSharedLoginMocks
+} = await vi.hoisted(async () => (await import('./helpers/loginResolverMocks.mts')).loginResolverMocks())
 
-const guardPublicLogin = vi.fn()
 const tryLoginUser = vi.fn()
 const updateUserLoginStats = vi.fn()
 const setRedisLoginSessionUser = vi.fn()
-const setLoginCookies = vi.fn()
-const captureException = vi.fn()
 
-// vi.hoisted, because vi.mock('mongoose') is hoisted above these declarations and this file
-// itself imports Types from mongoose — the factory therefore runs before the module body.
-const { startSession, withTransaction, endSession } = vi.hoisted(() => {
-	const end = vi.fn()
-	const inTransaction = vi.fn(async (fn: () => Promise<void>) => fn())
-	return {
-		startSession: vi.fn(async () => ({ withTransaction: inTransaction, endSession: end })),
-		withTransaction: inTransaction,
-		endSession: end
-	}
-})
-
-// Only startSession is swapped: Types must stay real so the _id below is a genuine ObjectId.
-vi.mock('mongoose', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('mongoose')>()
-	return { ...actual, default: { ...actual.default, startSession } }
-})
+vi.mock('mongoose', mongooseWithMockedSession)
 vi.mock('@lib/access/guardPublicLogin.mjs', () => ({ guardPublicLogin }))
 vi.mock('@lib/db/login/tryLoginUser.mjs', () => ({ tryLoginUser }))
 vi.mock('@lib/db/login/updateUserLoginStats.mjs', () => ({ updateUserLoginStats }))
@@ -59,15 +52,10 @@ let log: ReturnType<typeof vi.spyOn>
 
 describe('loginUser', () => {
 	beforeEach(() => {
-		guardPublicLogin.mockReset().mockResolvedValue(undefined)
+		resetSharedLoginMocks()
 		tryLoginUser.mockReset()
 		updateUserLoginStats.mockReset().mockResolvedValue(undefined)
 		setRedisLoginSessionUser.mockReset().mockResolvedValue(undefined)
-		setLoginCookies.mockReset()
-		captureException.mockReset()
-		endSession.mockClear()
-		withTransaction.mockClear()
-		startSession.mockClear()
 		log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
 	})
 	afterEach(() => log.mockRestore())
