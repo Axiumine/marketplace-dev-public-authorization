@@ -468,11 +468,13 @@ describe('login writes a real session on the cluster', () => {
 	})
 })
 
-// checkUserAuthorizationDisDel runs AFTER the password compare (see checkUserAuthorization.mts), so
-// each seed below uses the real correct password — only the real disabled/deleted gate can be what
-// refuses the request. A mocked model would just prove the gate function was called with some object;
-// only a real document read back through the real projection proves the field really reached it.
-describe('login refuses a disabled or deleted shopOwner, even with the correct password', () => {
+// Both gates run AFTER the password compare (see checkUserAuthorization.mts and tryLoginShopOwner),
+// so each seed below uses the real correct password — only the real gate can be what refuses the
+// request. A mocked model would just prove the gate function was called with some object; only a real
+// document read back through the real projection proves the field really reached it, which for
+// `waitApprov` is the entire failure mode: `checkShopOwnerApproval` cannot refuse a flag the
+// projection never asked for.
+describe('login refuses a disabled, deleted or unapproved shopOwner, even with the correct password', () => {
 	const mutation = `
 		mutation Login($email: String!, $password: String!) {
 			login(email: $email, password: $password, rememberMe: false) { accessToken }
@@ -495,6 +497,35 @@ describe('login refuses a disabled or deleted shopOwner, even with the correct p
 
 		expect(json.data?.login ?? null).toBeNull()
 		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+
+	// The one this file existed without for as long as the flag did: an operator raising `waitApprov`
+	// parks the account, and until `checkShopOwnerApproval` nothing anywhere read it, so the parked
+	// shop owner logged in with the correct password exactly like an approved one.
+	it('refuses a shopOwner still awaiting approval', async () => {
+		const { email } = await seedShopOwner({}, { waitApprov: true })
+
+		const { json } = await gql(mutation, { email, password: PASSWORD })
+
+		expect(json.data?.login ?? null).toBeNull()
+		expect(json.errors?.[0].message).toBe('Unauthorized')
+	})
+
+	// The other half, and the one a `waitApprov` gate written as `!== false` would fail: approval is an
+	// *absent* key, not `false` — `funShopOwnerUpdateStatus` `$unset`s it so the operator queue can be
+	// `{ waitApprov: { $exists: true } }`. Every other seed in this file is implicitly this case, but
+	// none of them says so, and a gate that locked out every approved shop owner would still leave
+	// them green only by accident of what they assert.
+	it('admits an approved shopOwner, whose document simply has no waitApprov key', async () => {
+		const { _id, email } = await seedShopOwner()
+
+		const seeded = await db().collection('shopOwner').findOne({ _id })
+		expect(seeded).not.toHaveProperty('waitApprov')
+
+		const { json } = await gql(mutation, { email, password: PASSWORD })
+
+		expect(json.errors).toBeUndefined()
+		expect(json.data?.login.accessToken).toEqual(expect.any(String))
 	})
 })
 
