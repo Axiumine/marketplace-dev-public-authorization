@@ -13,8 +13,8 @@ import {
 import { ALGORITHM_DETERMINISTIC } from '@axiumine/marketplace-common/encryption/EncryptionAlgorithm'
 import { encryptValue } from '@axiumine/marketplace-common/encryption/fieldEncryption'
 import { isCiphertext } from '@axiumine/marketplace-common/encryption/isCiphertext'
-import { sessionKey } from '@axiumine/marketplace-common/others/sessionKeys'
-import { TIER } from '@axiumine/marketplace-common/others/Tier'
+import { sessionIndexKey, sessionKey } from '@axiumine/marketplace-common/others/sessionKeys'
+import { TIER, Tier } from '@axiumine/marketplace-common/others/Tier'
 import bcrypt from '@node-rs/bcrypt'
 import type { Server } from 'http'
 import mongoose from 'mongoose'
@@ -415,7 +415,26 @@ async function expectSessionOnCluster(
 	expect(accessTtl).toBeLessThanOrEqual(ACCESS_TTL_MAX)
 	expect(await redisClient.ttl(refreshKey)).toBeGreaterThan(REFRESH_TOKEN_EXPIRY - 60)
 
-	return { accessKey, refreshKey }
+	/*
+	 * E15-S02, against a real Redis rather than a mock. The contract being proved is the one E15-S04
+	 * depends on and no unit test can: the field this login wrote **names a key that is actually there**.
+	 * Rebuilding the session key from the field and reading it back is the whole assertion — a field
+	 * digested from the wrong value would still be 64 hex characters and would still look right in every
+	 * unit test, and would name nothing.
+	 */
+	const indexKey = track(sessionIndexKey(tier as Tier, _id.toHexString()))
+	const index = await redisClient.hGetAll(indexKey)
+	const field = refreshKey.slice(REDIS_KEY.length)
+
+	expect(Object.keys(index)).toContain(field)
+	expect(JSON.parse(index[field]!)).toEqual({ tier, mintedAt: (await redisClient.hGetAll(refreshKey)).originalLogin })
+	expect(await redisClient.hGetAll(`${REDIS_KEY}${field}`)).toEqual(await redisClient.hGetAll(refreshKey))
+
+	// Thirty days, the longer cap, whatever cap this login carries — `sessionCapDays` is a parameter of
+	// this helper and the index TTL is not.
+	expect(await redisClient.ttl(indexKey)).toBeGreaterThan(2_592_000 - 60)
+
+	return { accessKey, refreshKey, indexKey }
 }
 
 // The login mutations are the only writers of a login session on the whole platform: every other

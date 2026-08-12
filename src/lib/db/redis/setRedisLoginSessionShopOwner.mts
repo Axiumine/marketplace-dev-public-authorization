@@ -24,6 +24,6 @@ export async function setRedisLoginSessionShopOwner(
 		accessToken,
 		refreshToken,
 		accessTokenRedisData as unknown as Record<string, string>,
-		refreshTokenData as unknown as Record<string, string>
+		refreshTokenData
 	)
 }
