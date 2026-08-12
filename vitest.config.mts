@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
 
+import { ITEST_REDIS_KEY } from './vitest.keygrip.mts'
 import { buildTestMongoUrl, TEST_CSFLE_KEY_VAULT_NAMESPACE, TEST_CSFLE_MASTER_KEY_PATH } from './vitest.mongo.mts'
 import { nodeNextResolver } from './vitest.shared.mts'
 
@@ -74,9 +75,14 @@ export default defineConfig({
 					// Redis ACL grants the test user exactly that pattern — a new top-level prefix would be
 					// denied. `fileParallelism: false` below is a different axis and still required: files
 					// inside one service share its throwaway database.
+					//
+					// ⚠️ REDIS_KEY is imported, not written here: globalSetup seeds the keygrip record
+					// (ADR-034) from another process, into `${REDIS_KEY}keygrip`, and a prefix typed twice
+					// is a prefix that can be edited once — the service would then boot against a namespace
+					// nobody seeded and refuse to start.
 					env: {
 						NODE_ENV: 'test',
-						REDIS_KEY: 'marketplaceDev:itest:publicAuthorization:',
+						REDIS_KEY: ITEST_REDIS_KEY,
 						PORT: '0',
 						MONGODB_URI: buildTestMongoUrl('rw'),
 						// ADR-029. start() refuses to boot without these two, and the file the first one

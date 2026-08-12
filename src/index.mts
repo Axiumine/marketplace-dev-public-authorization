@@ -2,9 +2,11 @@ import { ApolloServer } from '@apollo/server'
 import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer'
 import { koaMiddleware as apolloServerKoa } from '@as-integrations/koa'
 import { MongoDBConnect } from '@axiumine/koa-utils/dataSources/MongoDB'
-import { RedisConnect } from '@axiumine/koa-utils/dataSources/Redis'
+import { redisClient, RedisConnect } from '@axiumine/koa-utils/dataSources/Redis'
 import { tdwKoaErrorHandler } from '@axiumine/koa-utils/koa/tdwKoaErrorHandler'
 import { setupFieldEncryption } from '@axiumine/marketplace-common/encryption/setupFieldEncryption'
+import { IKeygripKeyMaterial } from '@axiumine/marketplace-common/others/IKeygripKeyMaterial'
+import { loadKeygrip } from '@axiumine/marketplace-common/others/loadKeygrip'
 import { disconnectAllDatabases } from '@lib/db/disconnectAllDatabases.mjs'
 import * as Sentry from '@sentry/node'
 import { GraphQLSchema, NoSchemaIntrospectionCustomRule, ValidationRule } from 'graphql'
@@ -19,14 +21,25 @@ import QueriesPublic from './graphQLPublic/schema/queries.mjs'
 
 export const ENDPOINT = '/public-authorization'
 
+/**
+ * How this service names itself in the keygrip holders table (ADR-034).
+ *
+ * ⚠️ It is the repository name, spelled out rather than derived from anything: the table is read by an
+ * operator deciding whether all five signing-key holders agree, and a row labelled from `process.title`
+ * or from a package field would rename itself the day either changes, silently orphaning the old row.
+ */
+export const SERVICE_NAME = 'marketplace-dev-public-authorization'
+
 // `DSN` is deliberately NOT in this list. Sentry is optional: `Sentry.init({ dsn: undefined })` is a
 // no-op, so a missing telemetry credential must never stop the service from serving. Requiring it made
 // boot fail *silently* — checkRequiredEnv() runs outside start()'s try, so the throw reached only the
 // top-level `.catch`, which reports to the very Sentry client the missing DSN had just disabled.
 export const REQUIRED_ENV_VARS = [
 	'PORT',
-	'KEYGRIP_KEY_1',
-	'KEYGRIP_KEY_2',
+	// ADR-034. The signing keys themselves are no longer here: they live in one Redis record shared by
+	// the five services that sign cookies, and this is the key that unwraps it. A service whose KEK
+	// does not open the record refuses to boot rather than signing cookies its siblings cannot verify.
+	'KEYGRIP_KEK',
 	'REDIS_IS_CLUSTER',
 	'REDIS_DB1_HOST',
 	'REDIS_DB2_HOST',
@@ -111,8 +124,12 @@ export function onUncaughtException(error: unknown): void {
  * This is the public tier: there is no authorization middleware, because login/loginAdmin
  * are exactly what an anonymous caller needs to reach. The signing keys are still set —
  * the login resolvers write the refresh cookie through them.
+ *
+ * ⚠️ The keys arrive as a parameter because they come from Redis (ADR-034), and reading Redis is
+ * `start()`'s job — a server builder that fetched its own keys could not be built by a test without a
+ * live datasource, and could not be handed a second key set when a rotation lands.
  */
-export async function createServer() {
+export async function createServer(keygripKeys: IKeygripKeyMaterial[]) {
 	/****************
 	 * KOA
 	 */
@@ -127,12 +144,17 @@ export async function createServer() {
 	 * A key longer than 64 bytes does not significantly increase the function strength unless the
 	 * randomness of the key is considered weak. A key longer than 128 bytes will be hashed before it is used.
 	 *
-	 * 64-byte base64: in bash: xxd -l64 -ps /dev/urandom | xxd -r -ps | base64
+	 * 64-byte base64: minted by the seed script in marketplace-db-setup, never by hand and never here.
 	 *
-	 * Non-null assertions, not `|| ''`: checkRequiredEnv() has already refused to boot
-	 * without both keys, so the fallback branch was unreachable by construction.
+	 * ⚠️ **Order is load-bearing.** `Keygrip` signs with index 0 and verifies against every entry, so the
+	 * newest key must come first — which is how `loadKeygrip` answers — and the older ones are what keep
+	 * already-issued cookies verifying across a rotation. The `cookies` package re-signs a cookie whose
+	 * match came from a later index, so sessions migrate to the new key on their own.
 	 */
-	const keys = new Keygrip([process.env.KEYGRIP_KEY_1!, process.env.KEYGRIP_KEY_2!], 'sha512')
+	const keys = new Keygrip(
+		keygripKeys.map((key) => key.material),
+		'sha512'
+	)
 	app.keys = keys
 
 	app.use(
@@ -202,6 +224,17 @@ export async function start() {
 		await Promise.all([MongoDBConnect(), RedisConnect()])
 
 		/****************
+		 * Cookie signing keys (ADR-034)
+		 *
+		 * Immediately after the Redis connect and before anything can sign: the keys are one record shared
+		 * by every service that issues or reads a session cookie, and a service that cannot unwrap it must
+		 * not start. Five copies of the key in five environment files, with nothing comparing them, is the
+		 * arrangement this replaces — its failure mode was users being logged out by whichever service the
+		 * edge happened to pick.
+		 */
+		const { keys: keygripKeys } = await loadKeygrip(redisClient, SERVICE_NAME)
+
+		/****************
 		 * Field encryption (ADR-029)
 		 *
 		 * After MongoDBConnect() and before anything can query: it reuses the connection mongoose has
@@ -212,7 +245,7 @@ export async function start() {
 		 */
 		await setupFieldEncryption()
 
-		const { httpServer, apolloServer } = await createServer()
+		const { httpServer, apolloServer } = await createServer(keygripKeys)
 
 		/****************
 		 * START SERVER
