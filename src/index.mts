@@ -5,6 +5,7 @@ import { MongoDBConnect } from '@axiumine/koa-utils/dataSources/MongoDB'
 import { redisClient, RedisConnect } from '@axiumine/koa-utils/dataSources/Redis'
 import { tdwKoaErrorHandler } from '@axiumine/koa-utils/koa/tdwKoaErrorHandler'
 import { setupFieldEncryption } from '@axiumine/marketplace-common/encryption/setupFieldEncryption'
+import { assertHashFieldTTLSupport } from '@axiumine/marketplace-common/others/assertHashFieldTTLSupport'
 import { IKeygripKeyMaterial } from '@axiumine/marketplace-common/others/IKeygripKeyMaterial'
 import { loadKeygrip } from '@axiumine/marketplace-common/others/loadKeygrip'
 import { watchKeygrip } from '@axiumine/marketplace-common/others/watchKeygrip'
@@ -223,6 +224,17 @@ export async function start() {
 		 * DB
 		 */
 		await Promise.all([MongoDBConnect(), RedisConnect()])
+
+		/****************
+		 * Hash-field TTLs (E15-S03)
+		 *
+		 * The first thing asked of the connection, because every login this service writes files the session
+		 * under its account and arms an `HEXPIRE` on the field — and Redis does not refuse an unknown command
+		 * at startup, it refuses it at first use. Without this the service boots on a 7.2 server, serves
+		 * every read, and dies inside the first login of the day with the cause three layers below the
+		 * symptom. The floor is 7.4.0, written down in `docker-DBs/README.md` §Redis.
+		 */
+		await assertHashFieldTTLSupport(redisClient)
 
 		/****************
 		 * Cookie signing keys (ADR-034)
