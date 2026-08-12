@@ -85,22 +85,24 @@ export default {
 		// all three boundaries from the source whenever src/index.mts changes length.
 		// 1) top of file through onUncaughtException, just before createServer()'s JSDoc: fully
 		//    unit-tested.
-		'src/index.mts:1-111',
-		// 2) createServer() itself (112-186) is deliberately skipped: it wires the real Koa app,
+		'src/index.mts:1-119',
+		// 2) createServer() itself (120-211) is deliberately skipped: it wires the real Koa app,
 		//    the ENDPOINT/`/health` routing middleware and the real ApolloServer, which
 		//    test/integration/index.itest.mts exercises by actually booting the server and hitting
 		//    it over HTTP (see COVERAGE.md, "Server boot ... are covered" — via the integration
 		//    project, which Stryker never runs; see vitest.mutation.config.mts). start()'s
 		//    signature through the DB-connect try/Promise.all is unit-tested (the two "start
 		//    (failure path)" tests reject MongoDBConnect/RedisConnect before createServer() is
-		//    ever reached), so it is re-included here.
-		'src/index.mts:187-216',
-		// 3) 217-232 is skipped: the happy-path continuation of start() (httpServer.listen, the
+		//    ever reached), so it is re-included here. Since ADR-034 the span also carries the
+		//    loadKeygrip call, which is unit-tested on both arms — mocked to resolve in the boot-order
+		//    tests, mocked to reject in the third failure-path test.
+		'src/index.mts:212-248',
+		// 3) 249-268 is skipped: the happy-path continuation of start() (httpServer.listen, the
 		//    wrapping Promise, the final `return`) only runs once both datasources actually
 		//    connect, which happens only under the integration project. start()'s catch block
-		//    (233-239) is unit-tested (both failure-path tests reach it), so it is re-included.
-		'src/index.mts:233-239'
-		// 4) 240-258 (the `/* v8 ignore start/stop */` bootstrap tail) stays out: it is guarded by
+		//    (269-274) is unit-tested (all three failure-path tests reach it), so it is re-included.
+		'src/index.mts:269-274'
+		// 4) 276-294 (the `/* v8 ignore start/stop */` bootstrap tail) stays out: it is guarded by
 		//    `if (process.env.NODE_ENV !== 'test')`, so it structurally cannot execute inside any
 		//    test process, unit or integration — the same reason it is v8-ignored for the coverage
 		//    gate instead of test-covered.

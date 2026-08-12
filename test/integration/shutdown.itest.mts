@@ -15,6 +15,7 @@ import {
 	onUnhandledRejection
 } from '../../src/index.mts'
 import { disconnectAllDatabases } from '../../src/lib/db/disconnectAllDatabases.mts'
+import { ITEST_KEYGRIP_KEYS } from '../../vitest.keygrip.mts'
 
 /*
  * The process-lifecycle half of the service, exercised against the real datasources.
@@ -33,6 +34,11 @@ import { disconnectAllDatabases } from '../../src/lib/db/disconnectAllDatabases.
 // Real handles for this file only. Rebuilt per test that needs them, because the point of most of
 // them is to destroy the thing.
 let exitSpy: ReturnType<typeof vi.spyOn>
+
+// Since ADR-034 createServer is handed the signing keys rather than reading two environment variables
+// itself. The run's own keys — the ones globalSetup sealed into the record — so a server built here
+// signs exactly as the one start() builds does.
+const KEYS = ITEST_KEYGRIP_KEYS
 
 beforeAll(async () => {
 	await Promise.all([MongoDBConnect(), RedisConnect()])
@@ -59,7 +65,7 @@ describe('production hardening actually applies to a real server', () => {
 
 		let server: Awaited<ReturnType<typeof createServer>> | undefined
 		try {
-			server = await createServer()
+			server = await createServer(KEYS)
 			await new Promise<void>((resolve) => server!.httpServer.listen({ port: 0 }, () => resolve()))
 			const { port } = server.httpServer.address() as AddressInfo
 
@@ -126,7 +132,7 @@ describe('gracefulShutdown against the real server and the real datasources', ()
 		const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
 
 		try {
-			const { httpServer, apolloServer } = await createServer()
+			const { httpServer, apolloServer } = await createServer(KEYS)
 			await new Promise<void>((resolve) => httpServer.listen({ port: 0 }, () => resolve()))
 
 			// Live before, so the assertions after mean something.
