@@ -1,16 +1,17 @@
 import { IRefreshData } from '@axiumine/marketplace-common/others/IRefreshData'
 import { TIER } from '@axiumine/marketplace-common/others/Tier'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hSet = vi.fn()
 const expire = vi.fn()
+const hExpire = vi.fn()
 const del = vi.fn()
 const captureException = vi.fn()
 
 const ACCESS_EXPIRY = 900
 const REFRESH_EXPIRY = 90 * 24 * 60 * 60
 
-vi.mock('@axiumine/koa-utils/dataSources/Redis', () => ({ redisClient: { hSet, expire, del } }))
+vi.mock('@axiumine/koa-utils/dataSources/Redis', () => ({ redisClient: { hSet, expire, hExpire, del } }))
 // accessTokenExpiry() is deliberately random in koa-utils (30–90 minutes); pinning it here keeps
 // the assertion on the TTL exact instead of a range.
 vi.mock('@axiumine/koa-utils/lib/tokens', () => ({
@@ -60,12 +61,31 @@ const indexField = keyRefresh.slice('test:'.length)
 /** Thirty days in seconds. A literal, so a mutated cap moves one side of the assertion and not both. */
 const INDEX_TTL = 2_592_000
 
+/**
+ * One hour after the login in the fixture above, and the reason the clock is pinned below (E15-S03).
+ *
+ * The *field's* TTL is what is left of `originalLogin + sessionCapDays`, which for a one-day session an
+ * hour old is 23 hours — and that number is the point: it is neither the key's thirty days, nor the
+ * session key's ninety, nor a fresh day. All three are wrong in a way only an exact assertion catches.
+ */
+const AN_HOUR_AFTER_LOGIN = Number(refreshData.originalLogin) + 3_600_000
+const FIELD_TTL = 86_400 - 3_600
+
 describe('setRedisLoginSession', () => {
 	beforeEach(() => {
 		hSet.mockReset().mockResolvedValue(1)
 		expire.mockReset().mockResolvedValue(true)
+		hExpire.mockReset().mockResolvedValue([1])
 		del.mockReset().mockResolvedValue(1)
 		captureException.mockReset()
+		// ⚠️ The field TTL is a *countdown to a deadline*, so the clock is part of the fixture. Left real,
+		// the only assertion available would be a range — and a range survives a flipped sign, a floor
+		// where a ceiling belongs, and a cap read off the wrong field. Pinned, the number is exact.
+		vi.useFakeTimers({ toFake: ['Date'] })
+		vi.setSystemTime(AN_HOUR_AFTER_LOGIN)
+	})
+	afterEach(() => {
+		vi.useRealTimers()
 	})
 
 	it('writes both hashes in the configured keyspace, then sets their TTLs', async () => {
@@ -101,6 +121,13 @@ describe('setRedisLoginSession', () => {
 			[indexField]: JSON.stringify({ tier: TIER.shopOwner, mintedAt: refreshData.originalLogin })
 		})
 		expect(expire).toHaveBeenCalledWith(keyIndex, INDEX_TTL)
+		/*
+		 * ⚠️ **Two TTLs on one write, and they are deliberately different numbers** (E15-S03). The key gets
+		 * the longer cap so no login can pull the account's whole index down; the field gets what is left of
+		 * *this* session's cap, so the row cannot outlive the session it names. Swapping them breaks the
+		 * index in one direction each, and both failures are invisible until an operator reads the list.
+		 */
+		expect(hExpire).toHaveBeenCalledWith(keyIndex, indexField, FIELD_TTL)
 		expect(indexField).toMatch(/^[0-9a-f]{64}$/)
 		expect(keyIndex).not.toContain(REFRESH)
 		expect(JSON.stringify(hSet.mock.calls)).not.toContain(REFRESH)
@@ -108,6 +135,8 @@ describe('setRedisLoginSession', () => {
 		// written after the session it names, and the index key's TTL after the field that creates the key.
 		expect(hSet.mock.calls.map(([key]) => key)).toEqual([keyAccess, keyRefresh, keyIndex])
 		expect(expire.mock.calls.map(([key]) => key)).toEqual([keyAccess, keyRefresh, keyIndex])
+		expect(hExpire).toHaveBeenCalledTimes(1)
+		expect(hExpire.mock.invocationCallOrder[0]).toBeGreaterThan(Math.max(...hSet.mock.invocationCallOrder))
 	})
 
 	/*

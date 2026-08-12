@@ -13,7 +13,7 @@ import {
 import { ALGORITHM_DETERMINISTIC } from '@axiumine/marketplace-common/encryption/EncryptionAlgorithm'
 import { encryptValue } from '@axiumine/marketplace-common/encryption/fieldEncryption'
 import { isCiphertext } from '@axiumine/marketplace-common/encryption/isCiphertext'
-import { sessionIndexKey, sessionKey } from '@axiumine/marketplace-common/others/sessionKeys'
+import { indexSession, sessionIndexKey, sessionKey } from '@axiumine/marketplace-common/others/sessionKeys'
 import { TIER, Tier } from '@axiumine/marketplace-common/others/Tier'
 import bcrypt from '@node-rs/bcrypt'
 import type { Server } from 'http'
@@ -434,6 +434,19 @@ async function expectSessionOnCluster(
 	// this helper and the index TTL is not.
 	expect(await redisClient.ttl(indexKey)).toBeGreaterThan(2_592_000 - 60)
 
+	/*
+	 * ⚠️ **The field's own TTL, and it is a different number from the key's** (E15-S03). The key lives the
+	 * longer cap unconditionally; the field lives until *this* login's cap runs out, which is what makes a
+	 * session that simply expires disappear from the index without anything having to visit it. The two
+	 * being different is the whole point, so this asserts the one the cap decides — a login carrying the
+	 * one-day cap must read a day here while the key above still reads thirty.
+	 */
+	const capSeconds = Number(sessionCapDays) * 86_400
+	const [fieldTtl] = await redisClient.hTTL(indexKey, field)
+
+	expect(fieldTtl).toBeLessThanOrEqual(capSeconds)
+	expect(fieldTtl).toBeGreaterThan(capSeconds - 60)
+
 	return { accessKey, refreshKey, indexKey }
 }
 
@@ -755,17 +768,32 @@ describe('the login limiter is in front of the resolver on the live server', () 
 })
 
 describe('setRedisLoginSession against the live cluster', () => {
+	/*
+	 * ⚠️ **A whole `IRefreshData`, every field of it.** This fixture used to be `{ _id }` alone, which was
+	 * already a session no authorization service would accept — `assertRefreshLineage` refuses one missing
+	 * the E14 fields — and since E15-S03 it is a session that cannot even be written: the field TTL counts
+	 * down to `originalLogin + sessionCapDays`, and neither of those is a number here. Nothing about the
+	 * assertion changes; what changes is that the call being made is one the platform actually makes.
+	 */
 	it('writes exactly the fields it is handed, on both keys', async () => {
 		const _id = new mongoose.Types.ObjectId().toHexString()
 		const accessToken = randomUUID()
 		const refreshToken = randomUUID()
 		const accessKey = track(sessionKey(`access:${accessToken}`))
 		const refreshKey = track(sessionKey(`refresh:${refreshToken}`))
+		track(sessionIndexKey(TIER.shopOwner, _id))
+		const refreshData = {
+			_id,
+			tier: TIER.shopOwner,
+			familyId: randomUUID(),
+			originalLogin: `${Date.now()}`,
+			sessionCapDays: '1'
+		}
 
-		await setRedisLoginSession(accessToken, refreshToken, { _id, email: 'oste@marketplace.test' }, { _id })
+		await setRedisLoginSession(accessToken, refreshToken, { _id, email: 'oste@marketplace.test' }, refreshData)
 
 		expect(await redisClient.hGetAll(accessKey)).toEqual({ _id, email: 'oste@marketplace.test' })
-		expect(await redisClient.hGetAll(refreshKey)).toEqual({ _id })
+		expect(await redisClient.hGetAll(refreshKey)).toEqual(refreshData)
 		expect(await redisClient.ttl(accessKey)).toBeGreaterThanOrEqual(ACCESS_TTL_MIN - 5)
 		expect(await redisClient.ttl(refreshKey)).toBeGreaterThan(REFRESH_TOKEN_EXPIRY - 60)
 	})
@@ -782,6 +810,66 @@ describe('setRedisLoginSession against the live cluster', () => {
 
 		expect(await redisClient.hGetAll(accessKey)).toEqual({})
 		expect(await redisClient.hGetAll(refreshKey)).toEqual({})
+	})
+})
+
+/*
+ * E15-S03's bound on stale rows, against a real server rather than a mock, because the bound is a claim
+ * about **Redis** and not about this code: the story's answer to "how many fields can an account's index
+ * accumulate that name sessions nobody can use" is *none, by construction*, and the construction is
+ * `HEXPIRE`. Rotation and logout unfile what they delete, but a session that is simply never used again
+ * passes through neither, and only the field's own TTL removes it. A unit test can prove the command was
+ * issued with the right seconds; only the cluster proves the field then actually goes away — and that both
+ * `hKeys` and `hTTL` agree it has, which is what E15-S04 will enumerate and what E17 will render.
+ *
+ * `indexSession` is the writer here rather than a hand-rolled `hSet` + `hExpire`: the number under test is
+ * the one the real login path computes, so a mistake in the computation has to show up in this test too.
+ */
+describe('a session index field expires on its own', () => {
+	// One second of remaining cap: a lineage minted a day ago minus a second, under the one-day cap. The
+	// arithmetic is the story's own — `originalLogin + sessionCapDays`, and nothing about the key's TTL.
+	const ONE_SECOND_LEFT = `${Date.now() - 86_400_000 + 1_000}`
+
+	it('drops a field whose cap has run out, and keeps one whose cap has not', async () => {
+		const _id = new mongoose.Types.ObjectId().toHexString()
+		const indexKey = track(sessionIndexKey(TIER.shopOwner, _id))
+		const expiring = `refresh:${randomUUID()}`
+		const living = `refresh:${randomUUID()}`
+
+		await indexSession(redisClient, expiring, {
+			_id,
+			tier: TIER.shopOwner,
+			familyId: randomUUID(),
+			originalLogin: ONE_SECOND_LEFT,
+			sessionCapDays: '1'
+		})
+		await indexSession(redisClient, living, {
+			_id,
+			tier: TIER.shopOwner,
+			familyId: randomUUID(),
+			originalLogin: `${Date.now()}`,
+			sessionCapDays: '30'
+		})
+
+		const expiringField = createHash('sha256').update(expiring).digest('hex')
+		const livingField = createHash('sha256').update(living).digest('hex')
+
+		expect(await redisClient.hKeys(indexKey)).toEqual(expect.arrayContaining([expiringField, livingField]))
+
+		await new Promise((resolve) => setTimeout(resolve, 2_000))
+
+		// Both readers, because they can disagree: a field can be gone from `hTTL` (-2) while a stale
+		// `hKeys` still lists it, and it is `hKeys` that a revocation would iterate.
+		const keys = await redisClient.hKeys(indexKey)
+		expect(keys).not.toContain(expiringField)
+		expect(keys).toContain(livingField)
+		expect(await redisClient.hTTL(indexKey, expiringField)).toEqual([-2])
+
+		// The survivor still carries the remainder of its own cap — the field did not merely outlive the
+		// other one, it is armed with the thirty days its login is entitled to.
+		const [livingTtl] = await redisClient.hTTL(indexKey, livingField)
+		expect(livingTtl).toBeLessThanOrEqual(2_592_000)
+		expect(livingTtl).toBeGreaterThan(2_592_000 - 60)
 	})
 })
 
