@@ -28,9 +28,16 @@ export async function setRedisLoginSession(
 		const accTokenExp = accessTokenExpiry()
 
 		// Store session in Redis
+		//
+		// ⚠️ **`accessKey` is stamped here rather than by the three tier wrappers, because this is where the
+		// key exists.** A session is a pair, and the refresh half is the one that outlives a request — so it
+		// is the half that has to know the name of the other, or the only thing that can find the access
+		// token is the `Authorization` header of whatever call happens to arrive next. A refresh sent without
+		// one (every page reload: an access token lives in memory) used to leave its predecessor alive and
+		// unreachable. See `IRefreshData.accessKey`.
 		await Promise.all([
 			redisClient.hSet(keyAccess, accessTokenKeyData),
-			redisClient.hSet(keyRefresh, refreshTokenData as unknown as Record<string, string>)
+			redisClient.hSet(keyRefresh, { ...refreshTokenData, accessKey: keyAccess } as unknown as Record<string, string>)
 		])
 		// set expire after hSet !
 		await Promise.all([redisClient.expire(keyAccess, accTokenExp), redisClient.expire(keyRefresh, REFRESH_TOKEN_EXPIRY)])

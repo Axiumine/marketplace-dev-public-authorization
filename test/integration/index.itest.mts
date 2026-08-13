@@ -398,13 +398,24 @@ async function expectSessionOnCluster(
 	const refreshKey = track(sessionKey(`refresh:${refreshTokenFrom(setCookie)}`))
 
 	expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email, tier })
+	/*
+	 * ⚠️ **`accessKey` is asserted as the key computed here, not as any 64-hex string.** It is the whole
+	 * of E14-S06's residual, against a real cluster: a session is a pair, and until the refresh half
+	 * recorded the name of the other, the only thing that could ever find the access token was the
+	 * `Authorization` header of the next call — which a page reload does not send, because an access
+	 * token lives in memory. A digest of the wrong value would still be 64 hex characters, would still
+	 * pass a shape check, and would name nothing.
+	 */
 	expect(await redisClient.hGetAll(refreshKey)).toEqual({
 		_id: _id.toHexString(),
 		tier,
 		familyId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
 		originalLogin: expect.stringMatching(/^\d{13}$/),
-		sessionCapDays
+		sessionCapDays,
+		accessKey
 	})
+	// A key, never a token: the stored value has to be findable by a reader that never sees the secret.
+	expect(accessKey).not.toContain(accessToken)
 
 	// The absolute cap is measured from this stamp, so a clock read on the wrong side of a serialisation
 	// would only show up here — a real login has to have been stamped within seconds of this assertion.
@@ -793,7 +804,10 @@ describe('setRedisLoginSession against the live cluster', () => {
 		await setRedisLoginSession(accessToken, refreshToken, { _id, email: 'oste@marketplace.test' }, refreshData)
 
 		expect(await redisClient.hGetAll(accessKey)).toEqual({ _id, email: 'oste@marketplace.test' })
-		expect(await redisClient.hGetAll(refreshKey)).toEqual(refreshData)
+		// The fields it is handed, plus the one it is the only place able to add: the key of the access
+		// token minted beside this refresh token. Asserted as the exact key, so a login that files the
+		// caller's data unchanged fails here rather than hours later as an access token nothing can retire.
+		expect(await redisClient.hGetAll(refreshKey)).toEqual({ ...refreshData, accessKey })
 		expect(await redisClient.ttl(accessKey)).toBeGreaterThanOrEqual(ACCESS_TTL_MIN - 5)
 		expect(await redisClient.ttl(refreshKey)).toBeGreaterThan(REFRESH_TOKEN_EXPIRY - 60)
 	})
