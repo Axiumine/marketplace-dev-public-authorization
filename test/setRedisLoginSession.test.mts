@@ -92,7 +92,15 @@ describe('setRedisLoginSession', () => {
 		await expect(setRedisLoginSession(ACCESS, REFRESH, accessData, refreshData)).resolves.toBeUndefined()
 
 		expect(hSet).toHaveBeenCalledWith(keyAccess, accessData)
-		expect(hSet).toHaveBeenCalledWith(keyRefresh, refreshData)
+		// ⚠️ **The refresh hash is the caller's data *plus* the key of the access token minted beside it**,
+		// and the addition is the whole of E14-S06's residual. A session is a pair; until the refresh half
+		// recorded the name of the other, the only thing that could find the access token was the
+		// `Authorization` header of the next call — and a page reload sends none, because an access token
+		// lives in memory. Asserted as the exact object, so a login that files the caller's data unchanged
+		// fails here rather than three hours later as an access token nothing can revoke.
+		expect(hSet).toHaveBeenCalledWith(keyRefresh, { ...refreshData, accessKey: keyAccess })
+		// The stored value is a key — a digest under the shared prefix — and never the token it names.
+		expect(hSet.mock.calls[1][1].accessKey).not.toContain(ACCESS)
 		// The TTLs must be applied after hSet: setting them first would let hSet reset them.
 		expect(expire).toHaveBeenCalledWith(keyAccess, ACCESS_EXPIRY)
 		expect(expire).toHaveBeenCalledWith(keyRefresh, REFRESH_EXPIRY)
