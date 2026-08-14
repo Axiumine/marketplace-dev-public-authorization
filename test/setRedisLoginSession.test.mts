@@ -32,8 +32,8 @@ const REFRESH = 'refresh-token'
  * The digests are written out as literals, computed elsewhere: a test that hashed the token with the call
  * the implementation makes would agree with it about any algorithm, including a mutated one.
  *
- * ⚠️ Writes are hashed-only from this deploy. Only *reads* carry the raw-key fallback (E13-S02), which is
- * what lets the old shape drain instead of being topped up.
+ * ⚠️ Writes have been hashed-only since E13-S01 and reads since E13-S10, when the raw-key fallback that
+ * let the old shape drain was deleted. The digest is the only name a session has anywhere.
  */
 const keyAccess = 'test:69eb6f4779efa55f78ab95003c760ddb3a0ffd99289f3bc73b4a0dff19c457f4'
 const keyRefresh = 'test:84c22fb18c900ef797d5ffefc61416ba5f1a10a903edb71aaad31991e16fe314'
