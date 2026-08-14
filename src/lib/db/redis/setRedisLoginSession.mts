@@ -16,8 +16,8 @@ export async function setRedisLoginSession(
 ) {
 	// Digests, not tokens (E13-S01), and of the **prefixed** value: `access:` and `refresh:` are what every
 	// reader presents, so hashing the bare uuid here would mint a session nothing on the platform can find.
-	// Writes are hashed-only from the cutover deploy — only reads carry a raw-key fallback, which is what
-	// lets the old shape drain instead of growing.
+	// Writes have been hashed-only since E13-S01, and since E13-S10 so have reads: the raw-key fallback that
+	// let the old shape drain is gone, so the digest is the only name a session has anywhere.
 	const keyAccess = sessionKey(`access:${accessToken}`)
 	// Built once and kept: the session key and the account index both hash this exact string, and an index
 	// field that is the digest of anything else names a key no revocation can rebuild (E15-S02).
