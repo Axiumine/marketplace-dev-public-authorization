@@ -1,3 +1,9 @@
+// noinspection DuplicatedCode -- the fragment this shares with loginUser.test.mts is the three imports and
+// the `vi.hoisted` destructure under them. What that block pulls in is already shared: the setup itself
+// lives in test/helpers/loginResolverMocks.mts, and this is only the binding that puts its names in scope.
+// The binding cannot move — `vi.hoisted` is hoisted to the top of the file that declares it, so a file that
+// imported these names instead would not have them by the time its `vi.mock` factories run.
+
 import type { IContextLogin } from '@axiumine/koa-utils/graphQL/schema/context/IContextLogin'
 import { Types } from 'mongoose'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
