@@ -232,7 +232,7 @@ export async function start() {
 		 * under its account and arms an `HEXPIRE` on the field — and Redis does not refuse an unknown command
 		 * at startup, it refuses it at first use. Without this the service boots on a 7.2 server, serves
 		 * every read, and dies inside the first login of the day with the cause three layers below the
-		 * symptom. The floor is 7.4.0, written down in `docker-DBs/README.md` §Redis.
+		 * symptom. The floor is 7.4.0, written down in `marketplace-docker-DBs/README.md` §Redis.
 		 */
 		await assertHashFieldTTLSupport(redisClient)
 
