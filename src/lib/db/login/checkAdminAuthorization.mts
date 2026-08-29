@@ -11,7 +11,7 @@ import { checkUserAuthorizationDisDel } from '@axiumine/marketplace-common/other
  * @param pwd2
  */
 export async function checkAdminAuthorization(admin: IAuthorizationDisDel, pwd1: string, pwd2: string) {
-	// the account is in the operators collection
+	// the account is in the admins collection
 	//console.log('compare pass 1')
 	const ret = await compareHashAsync(pwd1, pwd2)
 	//console.log('compare pass 2')
@@ -22,7 +22,7 @@ export async function checkAdminAuthorization(admin: IAuthorizationDisDel, pwd1:
 
 	// The admin tier used to stop at the password compare: tryLoginAdmin already projected
 	// `disabled deleted` out of the collection and then nothing ever read them, so a suspended or
-	// deleted platform operator kept logging in with the right password. This is the same gate the
+	// deleted platform admin kept logging in with the right password. This is the same gate the
 	// ShopOwner path runs in checkUserAuthorization, and it is deliberately placed AFTER the
 	// compare — running it earlier would let a caller who does NOT know the password tell an
 	// existing-but-disabled account apart from an unknown one.

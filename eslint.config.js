@@ -11,7 +11,7 @@ const sharedTsBlock = eslintConfig.find((c) => c.files?.includes('src/**/*.{d.ts
 /*
  * E01-S10, revised by the approval-gate fix. `waitApprov` used to be banned here in all four shapes,
  * on the reasoning that no BC-01 service had any business naming BC-03's field. That reasoning had a
- * hole in it: nothing read the flag anywhere on the platform, so an operator parking a shop owner
+ * hole in it: nothing read the flag anywhere on the platform, so an admin parking a shop owner
  * pending review changed nothing — the account logged in and kept working. The gate now reads it, so
  * a rule forbidding the read would forbid the fix.
  *
@@ -106,12 +106,12 @@ const RESTRICTED_SYNTAX = [
 	},
 	// E01-S10 — the `shopOwner` field the Admin tier owns outright, refused here so that "no
 	// ShopOwner-tier service selects it" stops being a claim about how the code happens to be
-	// written today. `notes` is free text an operator wrote *about* a named person, encrypted at rest
+	// written today. `notes` is free text an admin wrote *about* a named person, encrypted at rest
 	// and the one encrypted field on the platform whose subject never gets to read it. The approval
 	// gate `waitApprov` used to sit here beside it and no longer does — see `WAIT_APPROV_NO_WRITE`
 	// above for what replaced it and why a read had to become legal.
 	//
-	// The list and the whole argument live on `OPERATOR_ONLY_FIELDS_SHOP_OWNER` in
+	// The list and the whole argument live on `ADMIN_ONLY_FIELDS_SHOP_OWNER` in
 	// `marketplace-common` — including why this is a lint rule and not an anti-corruption layer.
 	// ⚠️ The name is duplicated from it rather than imported: an `import` here would make every
 	// `yarn lint` in this repo depend on a built, deployed `dist/` next door. What keeps the copies
@@ -128,7 +128,7 @@ const RESTRICTED_SYNTAX = [
 		selector:
 			"Property[key.name='notes'], TSPropertySignature[key.name='notes'], MemberExpression[property.name='notes'], Literal[value=/(^|\\s)notes(\\s|$)/]",
 		message:
-			"E01-S10: `shopOwner.notes` is the Admin tier's. It is what an operator wrote about this shop owner, and the subject never reads it — no BC-01/ShopOwner-tier service selects, projects, types or returns it. The list is OPERATOR_ONLY_FIELDS_SHOP_OWNER in marketplace-common."
+			"E01-S10: `shopOwner.notes` is the Admin tier's. It is what an admin wrote about this shop owner, and the subject never reads it — no BC-01/ShopOwner-tier service selects, projects, types or returns it. The list is ADMIN_ONLY_FIELDS_SHOP_OWNER in marketplace-common."
 	}
 ]
 

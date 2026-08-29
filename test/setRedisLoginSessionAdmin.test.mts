@@ -12,7 +12,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 describe('setRedisLoginSessionAdmin', () => {
 	const accessTokenRedisData = {
 		_id: '507f1f77bcf86cd799439011',
-		email: 'operator@marketplace.test',
+		email: 'admin@marketplace.test',
 		tier: 'admin' as const
 	}
 

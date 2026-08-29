@@ -40,7 +40,7 @@ Even after the password matches, every failure throws the same `throwUnauthorize
 `userVerifyEmailResend` exists on 4027: an unconfirmed customer cannot be told "confirm your email" here
 without telling everyone else who is registered, so the login screen offers the resend unconditionally.
 
-⚠️ **`waitApprov` is not a login gate.** The field is on `shopOwner` and an operator sets it, but nothing on
+⚠️ **`waitApprov` is not a login gate.** The field is on `shopOwner` and an admin sets it, but nothing on
 this path reads it — a shop owner awaiting approval logs in and gets a session. The integration suite in
 `marketplace-dev-authenticated-authorization` asserts exactly that, so "fixing" the apparent omission here
 fails a test that exists to pin the behaviour. `User` has no such field at all: customers self-serve.

@@ -17,7 +17,7 @@ import { ClientSession } from 'mongoose'
  *
  * ⚠️ **The two gates are not redundant and their order is not arbitrary.** Every self-registration
  * carries both flags — `waitApprov` up and `emailVerify.valid` false — and they come down at
- * different moments and by different hands: the activation link clears the second, an operator
+ * different moments and by different hands: the activation link clears the second, an admin
  * clears the first. Verification is checked first because it is the one the person at the keyboard
  * can act on; whichever throws, the caller sees the same error, so the ordering is a matter of which
  * failure the logs attribute rather than of what is disclosed.

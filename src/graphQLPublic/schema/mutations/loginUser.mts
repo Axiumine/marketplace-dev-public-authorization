@@ -48,7 +48,7 @@ const PER_EMAIL_PER_HOUR = 60
  * All three login resolvers are rate-limited and captcha-gated now; this one was first, because
  * `marketplace-user` was the only app minting a Turnstile token when the guard was written. What still
  * differs is the numbers: the ceilings are per-resolver constants, and `loginAdmin` sits lower than these
- * because there are a handful of operator accounts and a stolen operator session is the worst outcome on
+ * because there are a handful of admin accounts and a stolen admin session is the worst outcome on
  * the platform.
  *
  * ⚠️ **`turnstileToken` is nullable, and the gate still holds.** `assertTurnstile` verifies a token only

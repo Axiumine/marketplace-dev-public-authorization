@@ -7,7 +7,7 @@ import { Types } from 'mongoose'
  * omission: there is no `onboardingStep` / `onboardingDone`, because a customer is not walked through
  * anything after registering, and there *is* an `emailVerify.valid`, because that flag is the only
  * gate between a registered customer and a session. A shop owner's equivalent gate is `waitApprov`,
- * which an operator clears by hand and which this collection deliberately does not have.
+ * which an admin clears by hand and which this collection deliberately does not have.
  */
 export interface IUserLoginCheckData {
 	_id: Types.ObjectId

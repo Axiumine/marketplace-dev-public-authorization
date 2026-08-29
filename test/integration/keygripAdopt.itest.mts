@@ -105,7 +105,7 @@ describe('a rotation announced while the service is running', () => {
 	it('boots signing with the seeded key set and says so in the holders table', async () => {
 		expect(signing().sign('session-cookie')).toBe(new Keygrip([ITEST_KEYGRIP_KEYS[0].material], 'sha512').sign('session-cookie'))
 
-		// `<fingerprint>@<ISO-8601>` under this service's own name — the row an operator reads to decide
+		// `<fingerprint>@<ISO-8601>` under this service's own name — the row an admin reads to decide
 		// whether a rotation has reached everything that signs.
 		const [fp, stamp] = holderRow(await redisClient.hGet(HOLDERS_KEY, SERVICE_NAME))
 
@@ -138,7 +138,7 @@ describe('a rotation announced while the service is running', () => {
 		expect(signing().index('session-cookie', signedBefore)).toBe(1)
 	})
 
-	// And it says so where the operator looks: the row moves to the new fingerprint under the same name,
+	// And it says so where the admin looks: the row moves to the new fingerprint under the same name,
 	// which is how `keygripStatus` will be able to answer "has this landed everywhere yet".
 	it('restamps its holders row with the fingerprint it adopted', async () => {
 		const [fp] = holderRow(await redisClient.hGet(HOLDERS_KEY, SERVICE_NAME))
