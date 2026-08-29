@@ -537,7 +537,13 @@ describe('login refuses a disabled, deleted or unapproved shopOwner, even with t
 	`
 
 	it('refuses a disabled shopOwner', async () => {
-		const { email } = await seedShopOwner({}, { disabled: true })
+		// ⚠️ The reason travels with the flag because the collection demands it: ADR-044 added
+		// `dependencies: { disabled: ['disabledReason'] }` to the shopOwner and user validators, so a seed
+		// carrying the flag alone is refused by the server before this gate is ever reached. It rides in
+		// the `extra` bucket like `disabled` itself, and is encrypted on the way in with every other
+		// personal path, which `seedShopOwner` handles by spreading before it encrypts. `admin` carries no
+		// such dependency, which is why the two admin seeds below still pass the flag on its own.
+		const { email } = await seedShopOwner({}, { disabled: true, disabledReason: 'itest suspension' })
 
 		const { json } = await gql(mutation, { email, password: PASSWORD })
 
