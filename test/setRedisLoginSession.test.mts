@@ -133,7 +133,7 @@ describe('setRedisLoginSession', () => {
 		 * ⚠️ **Two TTLs on one write, and they are deliberately different numbers** (E15-S03). The key gets
 		 * the longer cap so no login can pull the account's whole index down; the field gets what is left of
 		 * *this* session's cap, so the row cannot outlive the session it names. Swapping them breaks the
-		 * index in one direction each, and both failures are invisible until an operator reads the list.
+		 * index in one direction each, and both failures are invisible until an admin reads the list.
 		 */
 		expect(hExpire).toHaveBeenCalledWith(keyIndex, indexField, FIELD_TTL)
 		expect(indexField).toMatch(/^[0-9a-f]{64}$/)

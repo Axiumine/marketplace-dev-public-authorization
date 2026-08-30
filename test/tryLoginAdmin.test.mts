@@ -29,12 +29,12 @@ describe('tryLoginAdmin', () => {
 	it('returns the lean admin after the password check, inside the caller session', async () => {
 		lean.mockResolvedValueOnce(admin)
 
-		await expect(tryLoginAdmin('operator@marketplace.test', 'clear', session)).resolves.toBe(admin)
+		await expect(tryLoginAdmin('admin@marketplace.test', 'clear', session)).resolves.toBe(admin)
 
 		// The projection is part of the contract: loginAdmin reads _id and login.lastLogin off the
 		// result, and the password check needs login.password.
 		expect(findOne).toHaveBeenCalledExactlyOnceWith(
-			{ 'login.email': 'operator@marketplace.test' },
+			{ 'login.email': 'admin@marketplace.test' },
 			'_id disabled deleted login.password login.lastLogin'
 		)
 		expect(sessionFn).toHaveBeenCalledExactlyOnceWith(session)
@@ -54,6 +54,6 @@ describe('tryLoginAdmin', () => {
 		lean.mockResolvedValueOnce(admin)
 		checkAdminAuthorization.mockRejectedValueOnce(new Error('Unauthorized'))
 
-		await expect(tryLoginAdmin('operator@marketplace.test', 'wrong', session)).rejects.toThrow('Unauthorized')
+		await expect(tryLoginAdmin('admin@marketplace.test', 'wrong', session)).rejects.toThrow('Unauthorized')
 	})
 })

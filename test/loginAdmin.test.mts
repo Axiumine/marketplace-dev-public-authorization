@@ -47,7 +47,7 @@ const _id = new Types.ObjectId('507f1f77bcf86cd799439011')
 // request property. The per-caller rate limit is nginx's — `app.proxy` is off, so the address this
 // process sees is the proxy's own.
 const ctx = { cookies: { set: vi.fn() } } as unknown as IContextLogin
-const args = { email: 'operator@marketplace.test', password: 'clear', rememberMe: false, turnstileToken: 'turnstile-token' }
+const args = { email: 'admin@marketplace.test', password: 'clear', rememberMe: false, turnstileToken: 'turnstile-token' }
 
 let log: ReturnType<typeof vi.spyOn>
 
@@ -62,7 +62,7 @@ describe('loginAdmin', () => {
 	afterEach(() => log.mockRestore())
 
 	// No onboarding here, unlike the shopOwner tier: an Admin is created by the platform
-	// operator and is done by definition, so the response pins onboardingDone to true.
+	// admin and is done by definition, so the response pins onboardingDone to true.
 	it('opens a session, stores the Redis session, updates the stats and sets the refresh cookie', async () => {
 		const lastLogin = new Date('2026-01-01T00:00:00.000Z')
 		tryLoginAdmin.mockResolvedValueOnce({ _id, login: { lastLogin } })
@@ -107,16 +107,16 @@ describe('loginAdmin', () => {
 	})
 
 	// The limit is policy, so it is asserted rather than left to whoever edits the constant next, and it is
-	// the tightest of the three tiers on purpose: a handful of operator accounts sign in from a handful of
-	// places, and a stolen operator session is the worst outcome on the platform.
+	// the tightest of the three tiers on purpose: a handful of admin accounts sign in from a handful of
+	// places, and a stolen admin session is the worst outcome on the platform.
 	it('meters on the loginAdmin bucket at 30 per email, with a normalised address', async () => {
 		tryLoginAdmin.mockResolvedValueOnce({ _id, login: {} })
 
-		await loginAdmin.resolve(null, { ...args, email: '  Operator@Marketplace.TEST  ' }, ctx)
+		await loginAdmin.resolve(null, { ...args, email: '  Admin@Marketplace.TEST  ' }, ctx)
 
 		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith({
 			bucket: 'loginAdmin',
-			email: 'operator@marketplace.test',
+			email: 'admin@marketplace.test',
 			turnstileToken: args.turnstileToken,
 			perEmailPerHour: 30
 		})

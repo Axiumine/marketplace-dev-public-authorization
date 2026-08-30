@@ -23,7 +23,7 @@ interface IArgs {
  * Per hour, per email address — the only counter this process keeps, the per-address half being
  * nginx's (`mkt_admin_auth`), which is tighter here than on the other two vhosts.
  *
- * ⚠️ Anyone who knows an operator's address can spend this budget on their behalf, so the number is a
+ * ⚠️ Anyone who knows an admin's address can spend this budget on their behalf, so the number is a
  * lockout risk before it is a defence, and locking out the people who administer the platform is worse than
  * locking out one customer: they are also the ones who would respond to the attack. At 30 it stays out of
  * the way of somebody mistyping a password all morning, while still capping a *distributed* attack on one
@@ -32,7 +32,7 @@ interface IArgs {
 const PER_EMAIL_PER_HOUR = 30
 
 /**
- * Logs a platform operator in.
+ * Logs a platform admin in.
  *
  * ⚠️ **`turnstileToken` is nullable, and the gate still holds.** `assertTurnstile` verifies a token only
  * when this process holds a secret key of its own, so a developer machine with no key configured accepts

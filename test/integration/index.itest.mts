@@ -560,7 +560,7 @@ describe('login refuses a disabled, deleted or unapproved shopOwner, even with t
 		expect(json.errors?.[0].message).toBe('Unauthorized')
 	})
 
-	// The one this file existed without for as long as the flag did: an operator raising `waitApprov`
+	// The one this file existed without for as long as the flag did: an admin raising `waitApprov`
 	// parks the account, and until `checkShopOwnerApproval` nothing anywhere read it, so the parked
 	// shop owner logged in with the correct password exactly like an approved one.
 	it('refuses a shopOwner still awaiting approval', async () => {
@@ -573,7 +573,7 @@ describe('login refuses a disabled, deleted or unapproved shopOwner, even with t
 	})
 
 	// The other half, and the one a `waitApprov` gate written as `!== false` would fail: approval is an
-	// *absent* key, not `false` — `funShopOwnerUpdateStatus` `$unset`s it so the operator queue can be
+	// *absent* key, not `false` — `funShopOwnerUpdateStatus` `$unset`s it so the admin queue can be
 	// `{ waitApprov: { $exists: true } }`. Every other seed in this file is implicitly this case, but
 	// none of them says so, and a gate that locked out every approved shop owner would still leave
 	// them green only by accident of what they assert.
@@ -668,7 +668,7 @@ describe('loginAdmin writes a real session on the cluster', () => {
  * projection ('_id disabled deleted login.password login.lastLogin') already fetched `disabled` and
  * `deleted` off the real document, and IAdminLoginCheckData already extended the same
  * IAuthorizationDisDel the shopOwner path gates on — but nothing ever read them back, so a
- * suspended or deleted PLATFORM OPERATOR (the highest-privilege tier) kept logging in with the right
+ * suspended or deleted PLATFORM ADMIN (the highest-privilege tier) kept logging in with the right
  * password. Found by seeding a disabled admin and driving it over real HTTP/Mongo, not by inspection.
  *
  * Both cases below use the real correct password on purpose: the gate runs after the compare, so a

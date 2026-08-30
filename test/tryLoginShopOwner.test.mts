@@ -1,7 +1,7 @@
 import {
-	APPROVAL_GATE_FIELD_SHOP_OWNER,
-	OPERATOR_ONLY_FIELDS_SHOP_OWNER
-} from '@axiumine/marketplace-common/others/operatorOnlyFields'
+	ADMIN_ONLY_FIELDS_SHOP_OWNER,
+	APPROVAL_GATE_FIELD_SHOP_OWNER
+} from '@axiumine/marketplace-common/others/adminOnlyFields'
 import type { ClientSession } from 'mongoose'
 import { Types } from 'mongoose'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -60,7 +60,7 @@ describe('tryLoginShopOwner', () => {
 
 		await tryLoginShopOwner('shop@marketplace.test', 'clear', session)
 
-		for (const field of OPERATOR_ONLY_FIELDS_SHOP_OWNER)
+		for (const field of ADMIN_ONLY_FIELDS_SHOP_OWNER)
 			expect(findOne).toHaveBeenCalledExactlyOnceWith(
 				{ 'login.email': 'shop@marketplace.test' },
 				expect.not.stringContaining(field)
@@ -82,7 +82,7 @@ describe('tryLoginShopOwner', () => {
 		)
 	})
 
-	// The point of the whole change: an operator raising `waitApprov` parks the account, and until this
+	// The point of the whole change: an admin raising `waitApprov` parks the account, and until this
 	// gate existed that did nothing — the shop owner logged in and worked as usual.
 	it('rejects with Unauthorized a shopOwner still awaiting approval', async () => {
 		lean.mockResolvedValueOnce({ ...user, waitApprov: true })
@@ -102,7 +102,7 @@ describe('tryLoginShopOwner', () => {
 	})
 
 	// `waitApprov` is truthy-or-absent in the collection — `funShopOwnerUpdateStatus` `$unset`s it on
-	// approval so the operator queue can stay a `{ $exists: true }` query — but an explicit `false` is
+	// approval so the admin queue can stay a `{ $exists: true }` query — but an explicit `false` is
 	// a shape a document could carry, and refusing it would lock out every approved shop owner.
 	it('lets a shopOwner through when waitApprov is explicitly false', async () => {
 		const approved = { ...user, waitApprov: false }
@@ -111,7 +111,7 @@ describe('tryLoginShopOwner', () => {
 		await expect(tryLoginShopOwner('shop@marketplace.test', 'clear', session)).resolves.toBe(approved)
 	})
 
-	// ⚠️ The activation gate. `shopOwnerRegister` writes `emailVerify.valid: false` and an operator
+	// ⚠️ The activation gate. `shopOwnerRegister` writes `emailVerify.valid: false` and an admin
 	// clearing `waitApprov` before the link is opened must not hand a session to whoever typed the
 	// address — proving the mailbox and being admitted to sell are two separate facts, and this is the
 	// only place the first one is enforced on this tier.
@@ -136,13 +136,13 @@ describe('tryLoginShopOwner', () => {
 		)
 	})
 
-	// ⚠️ **Absent must mean "not gated", and this is the case that says so.** A shop owner an operator
+	// ⚠️ **Absent must mean "not gated", and this is the case that says so.** A shop owner an admin
 	// created through `shopOwnerAdd` carries no `emailVerify` block at all and never will — there is
 	// nothing to backfill one from. A gate written `!== true` instead of `=== false` would lock out
 	// every shop owner who existed before self-registration shipped, on the next deploy, with no
 	// migration able to fix it.
 	it.each([
-		['no emailVerify subdocument at all — an operator-created account', {}],
+		['no emailVerify subdocument at all — an admin-created account', {}],
 		['an emailVerify with no valid flag', { emailVerify: {} }],
 		['a confirmed address', { emailVerify: { valid: true } }]
 	])('lets a shopOwner through with %s', async (_desc, extra) => {
