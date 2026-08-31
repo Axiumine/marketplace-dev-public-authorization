@@ -25,15 +25,15 @@ const { setRedisLoginSession } = await import('../src/lib/db/redis/setRedisLogin
 const ACCESS = 'access-token'
 const REFRESH = 'refresh-token'
 /*
- * Where a session is written since E13-S01: the shared prefix plus the SHA-256 of the **prefixed** token.
+ * Where a session is written: the shared prefix plus the SHA-256 of the **prefixed** token.
  * The prefixes are inside the digest, not beside it — `access:` and `refresh:` are what tell the two hashes
  * apart, and hashing the bare uuid would mint a session no reader on the platform can find.
  *
  * The digests are written out as literals, computed elsewhere: a test that hashed the token with the call
  * the implementation makes would agree with it about any algorithm, including a mutated one.
  *
- * ⚠️ Writes have been hashed-only since E13-S01 and reads since E13-S10, when the raw-key fallback that
- * let the old shape drain was deleted. The digest is the only name a session has anywhere.
+ * ⚠️ Writes and reads are both hashed-only — the raw-key fallback that let the old shape drain was
+ * deleted. The digest is the only name a session has anywhere.
  */
 const keyAccess = 'test:69eb6f4779efa55f78ab95003c760ddb3a0ffd99289f3bc73b4a0dff19c457f4'
 const keyRefresh = 'test:84c22fb18c900ef797d5ffefc61416ba5f1a10a903edb71aaad31991e16fe314'
@@ -48,10 +48,10 @@ const refreshData: IRefreshData = {
 }
 
 /*
- * The account's session index (E15-S02): one hash per account, named by tier *and* id, holding one field
+ * The account's session index: one hash per account, named by tier *and* id, holding one field
  * per live session.
  *
- * ⚠️ **The field is the body of `keyRefresh`, not a lookalike.** E15-S04 rebuilds the key to revoke as
+ * ⚠️ **The field is the body of `keyRefresh`, not a lookalike.** Revocation rebuilds the key to revoke as
  * `${REDIS_KEY}${field}` and never sees a token, so a field digested from anything else would still be 64
  * hex characters, still pass a shape check, and name a key that does not exist — an index of sessions
  * nothing can revoke, silent until the one moment it matters.
@@ -62,7 +62,7 @@ const indexField = keyRefresh.slice('test:'.length)
 const INDEX_TTL = 2_592_000
 
 /**
- * One hour after the login in the fixture above, and the reason the clock is pinned below (E15-S03).
+ * One hour after the login in the fixture above, and the reason the clock is pinned below.
  *
  * The *field's* TTL is what is left of `originalLogin + sessionCapDays`, which for a one-day session an
  * hour old is 23 hours — and that number is the point: it is neither the key's thirty days, nor the
@@ -93,7 +93,7 @@ describe('setRedisLoginSession', () => {
 
 		expect(hSet).toHaveBeenCalledWith(keyAccess, accessData)
 		// ⚠️ **The refresh hash is the caller's data *plus* the key of the access token minted beside it**,
-		// and the addition is the whole of E14-S06's residual. A session is a pair; until the refresh half
+		// and the addition is the whole point. A session is a pair; until the refresh half
 		// recorded the name of the other, the only thing that could find the access token was the
 		// `Authorization` header of the next call — and a page reload sends none, because an access token
 		// lives in memory. Asserted as the exact object, so a login that files the caller's data unchanged
@@ -105,14 +105,14 @@ describe('setRedisLoginSession', () => {
 		expect(expire).toHaveBeenCalledWith(keyAccess, ACCESS_EXPIRY)
 		expect(expire).toHaveBeenCalledWith(keyRefresh, REFRESH_EXPIRY)
 		expect(del).not.toHaveBeenCalled()
-		// ⚠️ Neither token survives in a key name. This is the whole of E13-S01 at the site that mints
+		// ⚠️ Neither token survives in a key name. This is the whole of the hashed-key rule at the site that mints
 		// every session on the platform, and it fails on any reconstruction of the old shape.
 		expect(keyAccess).not.toContain(ACCESS)
 		expect(keyRefresh).not.toContain(REFRESH)
 	})
 
 	/*
-	 * E15-S02, at the site that mints every session on the platform. Four things are pinned and each is a
+	 * The account's session index, at the site that mints every session on the platform. Four things are pinned and each is a
 	 * silent failure alone: the key (tier *and* id, because three collections mint ids independently), the
 	 * field (the digest the revocation rebuilds its key from), the value (a description of the session, with
 	 * no token in it) and the order — the field cannot be armed before the hash it lives in exists.
@@ -120,7 +120,7 @@ describe('setRedisLoginSession', () => {
 	 * ⚠️ **The TTL is the longer cap and never the session's own**, which is what this fixture proves: the
 	 * session written here carries `sessionCapDays: '1'` and the key still gets thirty days. Using the
 	 * session's cap would let one unremembered login pull the whole key down to a day and orphan a
-	 * remembered session — live, listed nowhere, and missed by E15-S04's revocation.
+	 * remembered session — live, listed nowhere, and missed by revocation.
 	 */
 	it('files the session under its account, by digest, and gives the index the longer cap', async () => {
 		await setRedisLoginSession(ACCESS, REFRESH, accessData, refreshData)
@@ -130,7 +130,7 @@ describe('setRedisLoginSession', () => {
 		})
 		expect(expire).toHaveBeenCalledWith(keyIndex, INDEX_TTL)
 		/*
-		 * ⚠️ **Two TTLs on one write, and they are deliberately different numbers** (E15-S03). The key gets
+		 * ⚠️ **Two TTLs on one write, and they are deliberately different numbers**. The key gets
 		 * the longer cap so no login can pull the account's whole index down; the field gets what is left of
 		 * *this* session's cap, so the row cannot outlive the session it names. Swapping them breaks the
 		 * index in one direction each, and both failures are invisible until an admin reads the list.
@@ -150,7 +150,7 @@ describe('setRedisLoginSession', () => {
 	/*
 	 * ⚠️ A login whose session cannot be listed is a login that cannot be revoked, so the index write is
 	 * inside the try and its failure rolls the session back. The alternative — swallowing it — would mint a
-	 * working session that E15-S04 can never reach, and nothing downstream would ever notice.
+	 * working session that revocation can never reach, and nothing downstream would ever notice.
 	 */
 	it('rolls the session back when the index write fails', async () => {
 		const error = new Error('index write failed')

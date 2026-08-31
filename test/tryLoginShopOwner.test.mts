@@ -48,7 +48,7 @@ describe('tryLoginShopOwner', () => {
 		expect(checkUserAuthorization).toHaveBeenCalledExactlyOnceWith(user, 'clear', 'stored-hash')
 	})
 
-	// E01-S10. The literal above fails on any change at all, but its fix is to paste the new string in;
+	// The literal above fails on any change at all, but its fix is to paste the new string in;
 	// this line names what may never appear in it, from the list owned by the repo that owns the shape.
 	// `stringContaining` rather than a token split: `shopOwnerNotes` is the same leak renamed.
 	//

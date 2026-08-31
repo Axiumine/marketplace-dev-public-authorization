@@ -28,7 +28,7 @@ describe('setRedisLoginSessionAdmin', () => {
 	 * Same split as the shopOwner tier — only the identity, the tier and the lineage survive on the refresh
 	 * key — but the admin payload has no onboarding data to carry.
 	 *
-	 * ⚠️ **Both hashes are asserted whole, not by subset** (E14-S01). The access hash is read by every
+	 * ⚠️ **Both hashes are asserted whole, not by subset**. The access hash is read by every
 	 * resource service on every request and its shape has to stay identical to the one `refreshSessionTokens`
 	 * writes on a rotation; the refresh hash has to carry all three lineage fields, because
 	 * `assertRefreshLineage` refuses a session missing any of them and a writer that dropped one would mint
@@ -47,7 +47,7 @@ describe('setRedisLoginSessionAdmin', () => {
 	})
 
 	/*
-	 * E14-S07, at the writer rather than only at `resolveSessionCapDays`. The three inputs are the three a
+	 * The session cap, at the writer rather than only at `resolveSessionCapDays`. The three inputs are the three a
 	 * caller can actually produce: a ticked box, an unticked one, and an argument that never arrived — and
 	 * the last of those takes the **short** cap, so an omission fails towards the shorter session.
 	 */

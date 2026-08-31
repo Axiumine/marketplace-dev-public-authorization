@@ -226,7 +226,7 @@ export async function start() {
 		await Promise.all([MongoDBConnect(), RedisConnect()])
 
 		/****************
-		 * Hash-field TTLs (E15-S03)
+		 * Hash-field TTLs
 		 *
 		 * The first thing asked of the connection, because every login this service writes files the session
 		 * under its account and arms an `HEXPIRE` on the field — and Redis does not refuse an unknown command
