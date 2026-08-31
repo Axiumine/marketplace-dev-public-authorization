@@ -30,7 +30,7 @@ describe('setRedisLoginSessionShopOwner', () => {
 	 * changes as the shop owner completes the wizard, so a copy on a key that lives ninety days would go
 	 * stale and answer questions nobody asked it.
 	 *
-	 * Both hashes are asserted whole rather than by subset (E14-S01): a writer that dropped one lineage
+	 * Both hashes are asserted whole rather than by subset: a writer that dropped one lineage
 	 * field would mint sessions `assertRefreshLineage` refuses on their first rotation.
 	 */
 	it('stores the full payload on the access key and the identity plus the lineage on the refresh key', async () => {
@@ -46,7 +46,7 @@ describe('setRedisLoginSessionShopOwner', () => {
 	})
 
 	/*
-	 * E14-S07, at the writer rather than only at `resolveSessionCapDays`. The three inputs are the three a
+	 * The session cap, at the writer rather than only at `resolveSessionCapDays`. The three inputs are the three a
 	 * caller can actually produce: a ticked box, an unticked one, and an argument that never arrived — and
 	 * the last of those takes the **short** cap, so an omission fails towards the shorter session.
 	 */

@@ -90,7 +90,7 @@ describe('checkRequiredEnv', () => {
 	 * fails later, at a request, somewhere that does not name the cause; a name added here and read
 	 * nowhere makes every environment carry a value that does nothing. A length check passes a swap and
 	 * a `toContain` passes an addition, so neither notices the change. The order is asserted too — the
-	 * boot names the *first* missing variable, and that is the one an admin goes looking for. E18-S03.
+	 * boot names the *first* missing variable, and that is the one an admin goes looking for.
 	 */
 	it('requires exactly these 15 variables, in this order', () => {
 		expect(REQUIRED_ENV_VARS).toStrictEqual([
@@ -357,7 +357,7 @@ describe('start (failure path)', () => {
 	})
 
 	/*
-	 * ⚠️ **A Redis without hash-field TTLs is a Redis this service cannot log anybody into** (E15-S03).
+	 * ⚠️ **A Redis without hash-field TTLs is a Redis this service cannot log anybody into**.
 	 * Every login it serves files the session under its account and arms an `HEXPIRE` on that field, and
 	 * Redis answers an unknown command at first use rather than at startup — so without this refusal the
 	 * process comes up green, serves reads all morning, and fails the first login inside a rollback.
@@ -449,7 +449,7 @@ describe('start (success path)', () => {
 	})
 
 	/*
-	 * ⚠️ The version probe goes on the SHARED client and goes FIRST (E15-S03). The shared client because it
+	 * ⚠️ The version probe goes on the SHARED client and goes FIRST. The shared client because it
 	 * is the connection every login will actually write through, and a probe of some other connection
 	 * answers for some other server; first because a boot that is going to be refused should be refused
 	 * before it unwraps a key record or opens a ClientEncryption.
@@ -601,7 +601,7 @@ describe('the signing keys', () => {
  * variable has to travel out of `start()` to the caller instead of being swallowed into the
  * disconnect-and-exit that handles a datasource failure — and it must get there before anything has
  * connected, because a datasource handle left half-open by a boot nobody completed is a connection
- * the pool goes on holding. E18-S03.
+ * the pool goes on holding.
  */
 describe('start (missing environment)', () => {
 	afterEach(() => {

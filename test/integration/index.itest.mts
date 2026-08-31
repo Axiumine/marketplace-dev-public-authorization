@@ -399,12 +399,11 @@ async function expectSessionOnCluster(
 
 	expect(await redisClient.hGetAll(accessKey)).toEqual({ _id: _id.toHexString(), email, tier })
 	/*
-	 * ⚠️ **`accessKey` is asserted as the key computed here, not as any 64-hex string.** It is the whole
-	 * of E14-S06's residual, against a real cluster: a session is a pair, and until the refresh half
-	 * recorded the name of the other, the only thing that could ever find the access token was the
-	 * `Authorization` header of the next call — which a page reload does not send, because an access
-	 * token lives in memory. A digest of the wrong value would still be 64 hex characters, would still
-	 * pass a shape check, and would name nothing.
+	 * ⚠️ **`accessKey` is asserted as the key computed here, not as any 64-hex string.** Asserted against a
+	 * real cluster: a session is a pair, and until the refresh half recorded the name of the other, the
+	 * only thing that could ever find the access token was the `Authorization` header of the next call —
+	 * which a page reload does not send, because an access token lives in memory. A digest of the wrong
+	 * value would still be 64 hex characters, would still pass a shape check, and would name nothing.
 	 */
 	expect(await redisClient.hGetAll(refreshKey)).toEqual({
 		_id: _id.toHexString(),
@@ -427,11 +426,11 @@ async function expectSessionOnCluster(
 	expect(await redisClient.ttl(refreshKey)).toBeGreaterThan(REFRESH_TOKEN_EXPIRY - 60)
 
 	/*
-	 * E15-S02, against a real Redis rather than a mock. The contract being proved is the one E15-S04
-	 * depends on and no unit test can: the field this login wrote **names a key that is actually there**.
-	 * Rebuilding the session key from the field and reading it back is the whole assertion — a field
-	 * digested from the wrong value would still be 64 hex characters and would still look right in every
-	 * unit test, and would name nothing.
+	 * The account's session index, against a real Redis rather than a mock. The contract being proved is
+	 * the one session revocation depends on and no unit test can: the field this login wrote **names a
+	 * key that is actually there**. Rebuilding the session key from the field and reading it back is the
+	 * whole assertion — a field digested from the wrong value would still be 64 hex characters and would
+	 * still look right in every unit test, and would name nothing.
 	 */
 	const indexKey = track(sessionIndexKey(tier as Tier, _id.toHexString()))
 	const index = await redisClient.hGetAll(indexKey)
@@ -446,7 +445,7 @@ async function expectSessionOnCluster(
 	expect(await redisClient.ttl(indexKey)).toBeGreaterThan(2_592_000 - 60)
 
 	/*
-	 * ⚠️ **The field's own TTL, and it is a different number from the key's** (E15-S03). The key lives the
+	 * ⚠️ **The field's own TTL, and it is a different number from the key's**. The key lives the
 	 * longer cap unconditionally; the field lives until *this* login's cap runs out, which is what makes a
 	 * session that simply expires disappear from the index without anything having to visit it. The two
 	 * being different is the whole point, so this asserts the one the cap decides — a login carrying the
@@ -788,7 +787,7 @@ describe('setRedisLoginSession against the live cluster', () => {
 	/*
 	 * ⚠️ **A whole `IRefreshData`, every field of it.** This fixture used to be `{ _id }` alone, which was
 	 * already a session no authorization service would accept — `assertRefreshLineage` refuses one missing
-	 * the E14 fields — and since E15-S03 it is a session that cannot even be written: the field TTL counts
+	 * the lineage fields — and it is now a session that cannot even be written: the field TTL counts
 	 * down to `originalLogin + sessionCapDays`, and neither of those is a number here. Nothing about the
 	 * assertion changes; what changes is that the call being made is one the platform actually makes.
 	 */
@@ -834,13 +833,14 @@ describe('setRedisLoginSession against the live cluster', () => {
 })
 
 /*
- * E15-S03's bound on stale rows, against a real server rather than a mock, because the bound is a claim
- * about **Redis** and not about this code: the story's answer to "how many fields can an account's index
+ * The per-field TTL's bound on stale rows, against a real server rather than a mock, because the bound
+ * is a claim about **Redis** and not about this code: the answer to "how many fields can an account's index
  * accumulate that name sessions nobody can use" is *none, by construction*, and the construction is
  * `HEXPIRE`. Rotation and logout unfile what they delete, but a session that is simply never used again
  * passes through neither, and only the field's own TTL removes it. A unit test can prove the command was
  * issued with the right seconds; only the cluster proves the field then actually goes away — and that both
- * `hKeys` and `hTTL` agree it has, which is what E15-S04 will enumerate and what E17 will render.
+ * `hKeys` and `hTTL` agree it has, which is what session revocation will enumerate and what the admin
+ * session console will render.
  *
  * `indexSession` is the writer here rather than a hand-rolled `hSet` + `hExpire`: the number under test is
  * the one the real login path computes, so a mistake in the computation has to show up in this test too.

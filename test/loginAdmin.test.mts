@@ -140,7 +140,7 @@ describe('loginAdmin', () => {
 		await expect(loginAdmin.resolve(null, args, ctx)).rejects.toThrow('Internal Server Error')
 
 		expect(captureException).toHaveBeenCalledWith(error)
-		// ⚠️ E12-S20. This block used to open with `console.log('catch', e)` and this line used to assert
+		// ⚠️ This block used to open with `console.log('catch', e)` and this line used to assert
 		// it. A login failure has the caller's email address in scope and stdout is a log file, so the
 		// absence is asserted rather than merely unasserted — the day somebody puts the print back while
 		// debugging, the test says so. `loginUser.mts` has always been this way round.

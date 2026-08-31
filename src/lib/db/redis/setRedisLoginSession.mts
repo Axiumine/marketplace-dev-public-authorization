@@ -14,13 +14,13 @@ export async function setRedisLoginSession(
 	accessTokenKeyData: Record<string, string>,
 	refreshTokenData: IRefreshData
 ) {
-	// Digests, not tokens (E13-S01), and of the **prefixed** value: `access:` and `refresh:` are what every
-	// reader presents, so hashing the bare uuid here would mint a session nothing on the platform can find.
-	// Writes have been hashed-only since E13-S01, and since E13-S10 so have reads: the raw-key fallback that
-	// let the old shape drain is gone, so the digest is the only name a session has anywhere.
+	// Digests, not tokens, and of the **prefixed** value: `access:` and `refresh:` are what every reader
+	// presents, so hashing the bare uuid here would mint a session nothing on the platform can find.
+	// Writes are hashed-only, and so are reads: the raw-key fallback that let the old shape drain is gone,
+	// so the digest is the only name a session has anywhere.
 	const keyAccess = sessionKey(`access:${accessToken}`)
 	// Built once and kept: the session key and the account index both hash this exact string, and an index
-	// field that is the digest of anything else names a key no revocation can rebuild (E15-S02).
+	// field that is the digest of anything else names a key no revocation can rebuild.
 	const prefixedRefresh = `refresh:${refreshToken}`
 	const keyRefresh = sessionKey(prefixedRefresh)
 
@@ -43,11 +43,11 @@ export async function setRedisLoginSession(
 		await Promise.all([redisClient.expire(keyAccess, accTokenExp), redisClient.expire(keyRefresh, REFRESH_TOKEN_EXPIRY)])
 
 		// File the session under its account, so the account can enumerate its own sessions without a
-		// keyspace scan (E15-S02). Last, and inside the try: a login whose session cannot be listed is a
+		// keyspace scan. Last, and inside the try: a login whose session cannot be listed is a
 		// login that cannot be revoked, so it fails the login rather than half-making one.
 		//
 		// ⚠️ The rollback below deletes the two session keys and not this field. What it would leave is a
-		// row naming two keys that no longer exist — a stale listing, never a credential — and E15-S03's
+		// row naming two keys that no longer exist — a stale listing, never a credential — and the
 		// per-field TTL is what removes it. Deleting it here would put a second failure mode on an error
 		// path for state that grants nothing.
 		await indexSession(redisClient, prefixedRefresh, refreshTokenData)
