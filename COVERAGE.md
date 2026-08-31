@@ -67,8 +67,7 @@ mutation gates stay.
 
 This is the **public tier**: `createServer()` mounts no authorization middleware, because
 `login` / `loginAdmin` are exactly what an anonymous caller has to be able to reach. Every
-request in the integration suite is therefore credential-free — no cookie, no bearer token,
-no `x-introspectioncode`.
+request in the integration suite is therefore credential-free — no cookie, no bearer token.
 
 Both datasources are opened (`Promise.all([MongoDBConnect(), RedisConnect()])`): the login
 resolvers read `shopOwner` / `admin` from MongoDB inside a transaction and then write the
