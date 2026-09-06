@@ -464,9 +464,16 @@ async function expectSessionOnCluster(
 // service reads back what these two put on the cluster. A mocked Redis proves the resolver called
 // hSet; only the live cluster proves the session another service will later find is really there.
 describe('login writes a real session on the cluster', () => {
+	// The onboarding pair is selected here and nowhere else in this file: it is what the shop-owner
+	// app asks for at sign-in, and until 2026-09-06 the resolver answered '' / false to everyone
+	// (R53), which a test that selects only `accessToken` cannot see.
 	const mutation = `
 		mutation Login($email: String!, $password: String!, $rememberMe: Boolean!) {
-			login(email: $email, password: $password, rememberMe: $rememberMe) { accessToken }
+			login(email: $email, password: $password, rememberMe: $rememberMe) {
+				accessToken
+				onboardingStep
+				onboardingDone
+			}
 		}
 	`
 
@@ -481,6 +488,10 @@ describe('login writes a real session on the cluster', () => {
 		// setRedisLoginSessionShopOwner writes the whole IRedisDataShopOwner into the access
 		// hash and only the _id into the refresh one.
 		await expectSessionOnCluster(accessToken, setCookie, _id, email, TIER.shopOwner, '1')
+
+		// A seeded shopOwner has no `onboardingDone`, so the derivation returns null and the caller is
+		// told not-done — the other half of the pair asserted below.
+		expect(json.data?.login).toMatchObject({ onboardingStep: '', onboardingDone: false })
 
 		// updateLoginStats ran in the same transaction, which therefore really committed.
 		// rememberMe: false takes the $unset branch, so the field must not be there at all.
@@ -506,6 +517,10 @@ describe('login writes a real session on the cluster', () => {
 			tier: TIER.shopOwner,
 			onboardingStep: 'p3'
 		})
+
+		// The same step the hash got, answered to the caller — through a real schema, a real resolver
+		// and a real document, which is the half a mocked `makeOnboardingData` cannot prove.
+		expect(json.data?.login).toMatchObject({ onboardingStep: 'p3', onboardingDone: true })
 
 		// rememberMe: true takes the $set branch instead.
 		const doc = await db().collection('shopOwner').findOne({ _id })

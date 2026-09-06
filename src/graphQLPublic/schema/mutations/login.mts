@@ -67,7 +67,12 @@ export const login = {
 			perEmailPerHour: PER_EMAIL_PER_HOUR
 		})
 
+		// Both are assigned inside the transaction, on the only path that reaches the `return` — the
+		// catch path never gets there, for the reason spelt out two lines below. Same shape as
+		// `accessToken`, and dead for the same reason.
+		// Stryker disable next-line StringLiteral: dead initializer, provably unobservable on any reachable path
 		let onboardingStep = ''
+		// Stryker disable next-line BooleanLiteral: dead initializer, provably unobservable on any reachable path
 		let onboardingDone = false
 		// This initial value is never observable: the happy path always overwrites it via
 		// `accessToken = generateAccessToken()` below before the `return`, and the catch path
@@ -99,6 +104,16 @@ export const login = {
 					tier: TIER.shopOwner
 				}
 				if (step !== null) redisData.onboardingStep = step
+
+				// ⚠️ **The same derivation the session gets, answered to the caller.** Until 2026-09-06 the
+				// step was computed here, written into the hash and then dropped on the way out: both
+				// variables above kept their initial values, so the mutation replied `''` / `false` to every
+				// shop owner whatever their state, and `marketplace-shopowner`'s login document said in as
+				// many words that nothing might branch on them (**R53**). `makeOnboardingData` returns null
+				// exactly when `login.onboardingDone` is falsy, so `step !== null` *is* that flag — re-derived
+				// from the one call rather than read off the document a second time.
+				onboardingStep = step ?? ''
+				onboardingDone = step !== null
 
 				accessToken = generateAccessToken()
 				const refreshToken = generateRefreshToken()
