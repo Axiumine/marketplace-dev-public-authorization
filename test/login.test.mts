@@ -83,10 +83,28 @@ describe('login', () => {
 		expect(setLoginCookies).toHaveBeenCalledExactlyOnceWith(ctx, REFRESH)
 		expect(endSession).toHaveBeenCalledTimes(1)
 
-		// Only the access token reaches the client: `onboardingStep` / `onboardingDone` are declared
-		// in the resolver but never assigned, so the response always carries '' / false even when the
-		// Redis session does hold a step. Asserted as-is — this documents current behaviour.
-		expect(result).toEqual({ onboardingStep: '', onboardingDone: false, accessToken: ACCESS })
+		// The step reaches the caller as well as the hash. It was dropped on the way out until
+		// 2026-09-06 — computed, stored, and then answered as '' / false to every shop owner (R53).
+		expect(result).toEqual({ onboardingStep: 'personalData', onboardingDone: true, accessToken: ACCESS })
+	})
+
+	// `makeOnboardingData` returns `''` for an shopOwner who is done and has no step recorded, and that
+	// is an answer rather than the absence of one: `onboardingDone` is true and the step is empty. The
+	// null case below is the other one, and the two must not collapse into each other.
+	it('answers an empty step as done rather than as not started', async () => {
+		tryLoginShopOwner.mockResolvedValueOnce({ _id, login: { onboardingDone: true } })
+		makeOnboardingData.mockReturnValueOnce('')
+
+		const result = await login.resolve(null, args, ctx)
+
+		expect(result).toEqual({ onboardingStep: '', onboardingDone: true, accessToken: ACCESS })
+		// Empty is still a value, so the Redis hash carries the key — `step !== null` decides both.
+		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
+			ACCESS,
+			REFRESH,
+			{ _id: _id.toString(), email: args.email, tier: 'shopOwner', onboardingStep: '' },
+			true
+		)
 	})
 
 	// makeOnboardingData returns null for an shopOwner that never finished onboarding; the key
@@ -95,7 +113,7 @@ describe('login', () => {
 		tryLoginShopOwner.mockResolvedValueOnce({ _id, login: {} })
 		makeOnboardingData.mockReturnValueOnce(null)
 
-		await login.resolve(null, args, ctx)
+		const result = await login.resolve(null, args, ctx)
 
 		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
 			ACCESS,
@@ -108,6 +126,10 @@ describe('login', () => {
 			true
 		)
 		expect(updateLoginStats).toHaveBeenCalledExactlyOnceWith(_id, null, true, expect.anything())
+
+		// null is the one answer that is not a step: the response says not-done, and says it with an
+		// empty string rather than with the null the derivation returned.
+		expect(result).toEqual({ onboardingStep: '', onboardingDone: false, accessToken: ACCESS })
 	})
 
 	// The counter is worth nothing if it is spent after the work it is meant to refuse. `guardPublicLogin`
