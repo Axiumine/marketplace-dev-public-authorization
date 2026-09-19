@@ -69,42 +69,26 @@ export default {
 		'src/**/*.mts',
 		// GraphQL type declarations: pure SDL (Hello2Type), no branches — nothing to mutate
 		// meaningfully.
-		'!src/graphQLPublic/schema/types/**',
-		// index.mts is NOT excluded wholesale, unlike the logout service: test/index.unit.test.mts
-		// unit-tests most of it directly (checkRequiredEnv, buildValidationRules, healthResponse,
-		// logListening, gracefulShutdown, onUnhandledRejection, onUncaughtException, and start()'s
-		// two failure paths), so those mutants are fully mutated below. Only the genuinely
-		// integration-only spans are carved back out by line range — verified empirically on a
-		// first Stryker run with no index.mts exclusion at all: every mutant inside these three
-		// ranges reported NoCoverage, and none outside them did.
-		'!src/index.mts',
-		// ⚠️ These are LINE NUMBERS, and they do not move when the file does. Adding anything above
-		// createServer() slides its body into a range marked "in scope", and the mutants that land
-		// there have no unit test to kill them — the run drops off 100 with survivors nobody
-		// introduced. That is exactly what ADR-029's `await setupFieldEncryption()` did. Re-derive
-		// all three boundaries from the source whenever src/index.mts changes length.
-		// 1) top of file through onUncaughtException, just before createServer()'s JSDoc: fully
-		//    unit-tested.
-		'src/index.mts:1-119',
-		// 2) createServer() itself (120-211) is deliberately skipped: it wires the real Koa app,
-		//    the ENDPOINT/`/health` routing middleware and the real ApolloServer, which
-		//    test/integration/index.itest.mts exercises by actually booting the server and hitting
-		//    it over HTTP (see COVERAGE.md, "Server boot ... are covered" — via the integration
-		//    project, which Stryker never runs; see vitest.mutation.config.mts). start()'s
-		//    signature through the DB-connect try/Promise.all is unit-tested (the two "start
-		//    (failure path)" tests reject MongoDBConnect/RedisConnect before createServer() is
-		//    ever reached), so it is re-included here. Since ADR-034 the span also carries the
-		//    loadKeygrip call, which is unit-tested on both arms — mocked to resolve in the boot-order
-		//    tests, mocked to reject in the third failure-path test.
-		'src/index.mts:212-248',
-		// 3) 249-268 is skipped: the happy-path continuation of start() (httpServer.listen, the
-		//    wrapping Promise, the final `return`) only runs once both datasources actually
-		//    connect, which happens only under the integration project. start()'s catch block
-		//    (269-274) is unit-tested (all three failure-path tests reach it), so it is re-included.
-		'src/index.mts:269-274'
-		// 4) 276-294 (the `/* v8 ignore start/stop */` bootstrap tail) stays out: it is guarded by
-		//    `if (process.env.NODE_ENV !== 'test')`, so it structurally cannot execute inside any
-		//    test process, unit or integration — the same reason it is v8-ignored for the coverage
-		//    gate instead of test-covered.
+		'!src/graphQLPublic/schema/types/**'
+		// ⚠️ index.mts is mutated in full, and that is a deliberate change of policy. It used to be
+		// excluded wholesale and re-included as three hand-written LINE RANGES, on the theory that
+		// createServer()'s routing middleware and start()'s happy path were reachable only from the
+		// integration project — which Stryker never runs (see vitest.mutation.config.mts). Neither half
+		// of that theory survives: test/index.unit.test.mts now boots the assembled server on an
+		// ephemeral port and drives ENDPOINT, /health and an unknown path over a real socket, and it
+		// drives start() to a successful listen, so the unit project alone covers every statement,
+		// branch and function of the file.
+		//
+		// The ranges had meanwhile rotted exactly as their own warning said they would. The file grew
+		// from 294 lines to 437 and nobody re-derived them, so gracefulShutdown, both process handlers
+		// and most of start() quietly stopped being mutated at all — while the score stayed at 100 and
+		// said nothing. A line range is only ever as good as the last person who remembered to move it;
+		// a span that really is unreachable from the unit project should fail the run as NoCoverage,
+		// not disappear from it.
+		//
+		// The one genuinely unreachable span — the `if (process.env.NODE_ENV !== 'test')` entrypoint
+		// tail — is carved out in the source instead, by a `// Stryker disable all` / `// Stryker
+		// restore all` pair around it, where it moves with the code it guards. Same shape, and the same
+		// reason, as marketplace-dev-admin-authenticated-resource.
 	]
 }

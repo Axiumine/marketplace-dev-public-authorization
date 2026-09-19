@@ -1,7 +1,9 @@
 import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 
 import type { EnvShape } from '@axiumine/marketplace-common/others/assertEnvShape'
 import Keygrip from 'keygrip'
+import type { Context } from 'koa'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const captureException = vi.fn()
@@ -22,6 +24,12 @@ const assertHashFieldTTLSupport = vi.fn()
 // instead of merely being reached.
 const bodyParserOptions: unknown[] = []
 const apolloServerOptions: { pluginCount: number | undefined; csrfPrevention: unknown }[] = []
+
+// The options object src/index.mts hands the Apollo/Koa integration, recorded once per request that
+// reaches ENDPOINT. The wrapper delegates to the real koaMiddleware — the request still travels
+// through Apollo exactly as in production — so the `context` recorded here is the very closure the
+// resolvers are handed.
+const koaMiddlewareOptions: { context?: () => Promise<unknown> }[] = []
 
 // Two 64-byte keys, newest first, exactly as loadKeygrip answers. Written as bytes: nothing here is a
 // real signing key, and the pair has to be distinguishable so the order can be asserted.
@@ -99,6 +107,21 @@ vi.mock('@apollo/server', async (importOriginal) => {
 		}
 	}
 	return { ...actual, ApolloServer: SpiedApolloServer }
+})
+// Recording wrapper only: `koaMiddleware` is re-exported untouched apart from the push, because what
+// is under test is the options literal src/index.mts builds, not the integration's own behaviour.
+// Typed through `unknown[]` rather than `Parameters<>`: koaMiddleware is generic in its context type,
+// and naming that type here would fix the very thing the assertion is meant to read back.
+vi.mock('@as-integrations/koa', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@as-integrations/koa')>()
+	const real = actual.koaMiddleware as unknown as (...args: unknown[]) => unknown
+	return {
+		...actual,
+		koaMiddleware: (...args: unknown[]) => {
+			koaMiddlewareOptions.push(args[1] as { context?: () => Promise<unknown> })
+			return real(...args)
+		}
+	}
 })
 
 const {
@@ -779,6 +802,122 @@ describe('createServer', () => {
 			await apolloServer.stop()
 			vi.unstubAllEnvs()
 		}
+	})
+})
+
+/*
+ * ⚠️ The routing middleware itself, driven over a real socket. `createServer()` connects no
+ * datasource — `start()` does that, separately — so the assembled app can be listened on an
+ * ephemeral port and requested with `fetch`, and that is the only way the three arms of
+ * `if (ctx.path === ENDPOINT) … else if … else` are ever executed at all: every other test in this
+ * file stops at the handles `createServer()` returns and never sends a request through them.
+ * Without this block the whole middleware is NoCoverage, which is how it came to be carved out of
+ * `mutate` in stryker.config.mjs instead of tested.
+ */
+describe('createServer (real Koa/Apollo assembly, driven over a real socket)', () => {
+	let app: Awaited<ReturnType<typeof createServer>>['app']
+	let httpServer: Awaited<ReturnType<typeof createServer>>['httpServer']
+	let apolloServer: Awaited<ReturnType<typeof createServer>>['apolloServer']
+	let base: string
+
+	beforeEach(async () => {
+		koaMiddlewareOptions.length = 0
+		for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
+		vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
+
+		const server = await createServer(KEYS)
+		app = server.app
+		httpServer = server.httpServer
+		apolloServer = server.apolloServer
+
+		await new Promise<void>((resolve) => httpServer.listen(0, resolve))
+		base = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`
+	})
+
+	afterEach(async () => {
+		await apolloServer.stop()
+		await new Promise<void>((resolve) => httpServer.close(() => resolve()))
+		vi.unstubAllEnvs()
+	})
+
+	// The public tier answers an anonymous caller: no bearer, no cookie, no authorization middleware
+	// — that is the whole point of the tier, and this is what proves the schema is reachable without
+	// a credential rather than merely assembled.
+	it('serves the assembled public schema at ENDPOINT, to a caller carrying no credential', async () => {
+		const res = await fetch(`${base}${ENDPOINT}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ query: '{ __schema { queryType { name } mutationType { name } } }' })
+		})
+		const json = (await res.json()) as {
+			data?: { __schema: { queryType: { name: string }; mutationType: { name: string } } }
+		}
+
+		expect(res.status).toBe(200)
+		expect(json.data?.__schema).toEqual({ queryType: { name: 'QueriesPublic' }, mutationType: { name: 'MutationsPublic' } })
+	})
+
+	/*
+	 * ⚠️ The raw Koa `ctx`, not the integration's own empty default — and read off the options object
+	 * rather than out of a resolver, because nothing in the public schema can tell the two apart:
+	 * `authPublicHello` takes no arguments, and the three login mutations that DO read the context
+	 * reach Mongo and Redis before they touch it. What the options object shows is exactly what is at
+	 * stake: `setLoginCookies(ctx, refreshToken)` writes the refresh cookie through this value, so a
+	 * `context()` returning `undefined` — or an options literal emptied to `{}`, which makes the
+	 * integration supply its own `{}` instead — is a login that cannot set a cookie.
+	 */
+	it('hands the Koa ctx of the request itself to Apollo as the resolver context', async () => {
+		const res = await fetch(`${base}${ENDPOINT}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ query: '{ authPublicHello { txt } }' })
+		})
+		await res.json()
+
+		expect(koaMiddlewareOptions).toHaveLength(1)
+		const context = koaMiddlewareOptions[0]?.context
+		expect(context).toBeTypeOf('function')
+
+		const ctx = (await context?.()) as Context
+		expect(ctx.path).toBe(ENDPOINT)
+		expect(ctx.app).toBe(app)
+	})
+
+	/*
+	 * Apollo's CSRF prevention treats `application/x-www-form-urlencoded` as suspicious unless a
+	 * non-empty `x-apollo-operation-name` (or `apollo-require-preflight`) header is present. This is
+	 * the behaviour `csrfPrevention: true` buys, asserted end to end rather than only as an option
+	 * literal: a simple, credentialed cross-site POST is what it exists to refuse.
+	 */
+	it('blocks a form-encoded POST with no preflight header as a potential CSRF attempt', async () => {
+		const res = await fetch(`${base}${ENDPOINT}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: 'query=' + encodeURIComponent('{ __typename }')
+		})
+		const json = (await res.json()) as { errors?: { message: string }[] }
+
+		expect(res.status).toBe(400)
+		expect(json.errors?.[0]?.message).toContain('potential Cross-Site Request Forgery')
+	})
+
+	// `/health` is what the systemd unit and the monitor poll, and it answers before any credential is
+	// involved — this tier has none to check.
+	it('answers /health with the health body, unauthenticated', async () => {
+		const res = await fetch(`${base}/health`)
+		const json = (await res.json()) as { status: string; timestamp: string }
+
+		expect(res.status).toBe(200)
+		expect(json.status).toBe('OK')
+		expect(new Date(json.timestamp).toISOString()).toBe(json.timestamp)
+	})
+
+	// Nothing is mounted after the router, so `await next()` ends in Koa's own 404 — which is the
+	// point: an unknown path must not be answered by either of the two arms above.
+	it('falls through to 404 for an unknown path', async () => {
+		const res = await fetch(`${base}/nope`)
+
+		expect(res.status).toBe(404)
 	})
 })
 
