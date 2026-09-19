@@ -14,6 +14,15 @@ const loadKeygrip = vi.fn()
 const watchKeygrip = vi.fn()
 const assertHashFieldTTLSupport = vi.fn()
 
+// Captured constructor/factory arguments for the two real, unmocked config objects createServer()
+// builds (koa-bodyparser's options, ApolloServer's options). Both wrappers delegate to the real
+// implementation — body parsing and the Apollo instance still behave exactly as in production —
+// they only additionally record what they were called with, so the option literals themselves
+// (enableTypes, extendTypes, plugins, csrfPrevention) have something asserting their exact value
+// instead of merely being reached.
+const bodyParserOptions: unknown[] = []
+const apolloServerOptions: { pluginCount: number | undefined; csrfPrevention: unknown }[] = []
+
 // Two 64-byte keys, newest first, exactly as loadKeygrip answers. Written as bytes: nothing here is a
 // real signing key, and the pair has to be distinguishable so the order can be asserted.
 const KEYS = [
@@ -61,6 +70,36 @@ vi.mock('@axiumine/marketplace-common/others/watchKeygrip', () => ({ watchKeygri
 // connection, and a refusal as fatal as a datasource failure; all three are asserted below.
 vi.mock('@axiumine/marketplace-common/others/assertHashFieldTTLSupport', () => ({ assertHashFieldTTLSupport }))
 vi.mock('@lib/db/disconnectAllDatabases.mjs', () => ({ disconnectAllDatabases }))
+vi.mock('koa-bodyparser', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('koa-bodyparser')>()
+	return {
+		// koa-bodyparser mutates its `opts` argument in place (sets detectJSON/onerror/
+		// returnRawBody directly on the object it was given), so the options object must be
+		// snapshotted with a shallow copy BEFORE calling through, or the recorded value would
+		// reflect koa-bodyparser's post-mutation state instead of what src/index.mts passed in.
+		default: (options: Parameters<typeof actual.default>[0]) => {
+			bodyParserOptions.push({ ...options })
+			return actual.default(options)
+		}
+	}
+})
+vi.mock('@apollo/server', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@apollo/server')>()
+	class SpiedApolloServer extends actual.ApolloServer {
+		constructor(options: ConstructorParameters<typeof actual.ApolloServer>[0]) {
+			// ApolloServer's real constructor appends its own built-in plugins (landing page,
+			// usage reporting, ...) directly onto the `plugins` array it was given, so the count
+			// must be read BEFORE calling super() — reading it after would count Apollo's own
+			// plugins alongside ours. Referencing the constructor parameter before super() is
+			// fine; only `this` is off-limits until super() runs.
+			const pluginCount = options?.plugins?.length
+			const csrfPrevention = options?.csrfPrevention
+			super(options)
+			apolloServerOptions.push({ pluginCount, csrfPrevention })
+		}
+	}
+	return { ...actual, ApolloServer: SpiedApolloServer }
+})
 
 const {
 	ENDPOINT,
@@ -695,6 +734,51 @@ describe('start (success path)', () => {
 
 		await server?.apolloServer.stop()
 		info.mockRestore()
+	})
+})
+
+/*
+ * ⚠️ createServer() wires the real Koa app, koa-bodyparser and the real ApolloServer — no mock
+ * stands between this test and their actual behaviour, only a recording wrapper (see
+ * bodyParserOptions/apolloServerOptions above). The line range that carries this call is inside
+ * `mutate` in stryker.config.mjs precisely BECAUSE it is unit-tested here: without an assertion on
+ * the option literals themselves, every mutant inside the bodyParserKoa/ApolloServer config objects
+ * is merely REACHED (the constructor runs either way) and never actually caught, which Stryker
+ * reports as Survived rather than NoCoverage.
+ */
+describe('createServer', () => {
+	beforeEach(() => {
+		bodyParserOptions.length = 0
+		apolloServerOptions.length = 0
+	})
+
+	it('parses json/form/text bodies and hardens Apollo with the drain plugin and csrfPrevention', async () => {
+		for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
+		vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
+
+		const { apolloServer } = await createServer(KEYS)
+
+		try {
+			// The whole options object, not a subset: `bodyParserKoa({})` (every key dropped),
+			// an emptied `enableTypes`/`extendTypes.json` array, or any one of the three type
+			// strings blanked all still reach koa-bodyparser and all still fail this exact match.
+			expect(bodyParserOptions).toEqual([
+				{
+					enableTypes: ['json', 'form', 'text'],
+					// Multipart requests are deliberately excluded here — graphqlUploadKoa handles
+					// those — so only 'application/json' extends the json type, nothing else.
+					extendTypes: { json: ['application/json'] }
+				}
+			])
+
+			// pluginCount asserts the drain plugin is still wired (an emptied `plugins` array
+			// would leave the httpServer undrained on shutdown); csrfPrevention: true is what
+			// keeps this endpoint refusing a simple, credentialed cross-site POST.
+			expect(apolloServerOptions).toEqual([{ pluginCount: 1, csrfPrevention: true }])
+		} finally {
+			await apolloServer.stop()
+			vi.unstubAllEnvs()
+		}
 	})
 })
 
