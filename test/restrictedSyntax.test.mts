@@ -18,6 +18,13 @@ import { describe, expect, it } from 'vitest'
 
 const FIXTURES = new URL('./fixtures/restrictedSyntax/', import.meta.url)
 
+// One instance for the whole file, not one per case: the shared config's TypeScript block carries
+// `parserOptions.project`, and `new ESLint()` rebuilds that TS program from scratch on every call —
+// cheap alone, but multiplied by every fixture below and run in parallel with the rest of the suite
+// it is slow enough to trip the 5s per-test default. The program is immutable across these calls
+// (same config, only the linted text and path change), so one instance is correct, not a shortcut.
+const eslint = new ESLint()
+
 const TLS_MESSAGE = 'certificate verification stays on.'
 const PII_MESSAGE = 'the blanket Sentry PII flag is absent by decision, not set to false.'
 const BODY_MESSAGE = 'the request body is never captured.'
@@ -43,7 +50,7 @@ const TEST_PATH = 'test/restrictedSyntaxFixture.mts'
 
 const lintFixture = async (name: string, filePath: string = TEST_PATH) => {
 	const code = await readFile(new URL(`${name}.mts.fixture`, FIXTURES), 'utf8')
-	const [result] = await new ESLint().lintText(code, { filePath })
+	const [result] = await eslint.lintText(code, { filePath })
 
 	return (result?.messages ?? []).filter((message) => message.ruleId === 'no-restricted-syntax')
 }
@@ -62,13 +69,17 @@ describe('the no-restricted-syntax block fires on every shape it names', () => {
 		['admin-only-notes-property', NOTES_MESSAGE],
 		['admin-only-notes-member', NOTES_MESSAGE],
 		['admin-only-notes-signature', NOTES_MESSAGE]
-	])('reports %s exactly once', async (fixture, expected) => {
-		const messages = await lintFixture(fixture)
+	])(
+		'reports %s exactly once',
+		async (fixture, expected) => {
+			const messages = await lintFixture(fixture)
 
-		expect(messages).toHaveLength(1)
-		expect(messages[0]?.message).toContain(expected)
-		expect(messages[0]?.severity).toBe(2)
-	})
+			expect(messages).toHaveLength(1)
+			expect(messages[0]?.message).toContain(expected)
+			expect(messages[0]?.severity).toBe(2)
+		},
+		30_000
+	)
 })
 
 /*
@@ -87,14 +98,14 @@ describe('the waitApprov write ban is scoped to src/**', () => {
 		expect(messages).toHaveLength(1)
 		expect(messages[0]?.message).toContain(WAIT_APPROV_MESSAGE)
 		expect(messages[0]?.severity).toBe(2)
-	})
+	}, 30_000)
 
 	// Not a loophole — a test proving the gate bites has to seed a `waitApprov: true` document, and a
 	// fixture is a `Property` like any other. A rule that refused it would delete the proof that the
 	// gate works, which is worth more than banning a write no service under test performs.
 	it('stays silent on the same write under test/', async () => {
 		expect(await lintFixture('admin-only-wait-approv-property')).toStrictEqual([])
-	})
+	}, 30_000)
 
 	// The three read shapes, at the path where the ban is strictest. Each one is now load-bearing:
 	// the projection is what hands the flag to `checkShopOwnerApproval`, the interface is where it
@@ -103,7 +114,8 @@ describe('the waitApprov write ban is scoped to src/**', () => {
 		'stays silent on %s under src/',
 		async (fixture) => {
 			expect(await lintFixture(fixture, SRC_PATH)).toStrictEqual([])
-		}
+		},
+		30_000
 	)
 
 	// ⚠️ The src-scoped config object sets `no-restricted-syntax` a second time, and a later flat-config
@@ -116,16 +128,20 @@ describe('the waitApprov write ban is scoped to src/**', () => {
 		['admin-only-notes-projection', NOTES_MESSAGE],
 		['send-default-pii', PII_MESSAGE],
 		['assignment-reject-unauthorized', TLS_MESSAGE]
-	])('still reports %s under src/, so the shared entries survived the second config object', async (fixture, expected) => {
-		const messages = await lintFixture(fixture, SRC_PATH)
+	])(
+		'still reports %s under src/, so the shared entries survived the second config object',
+		async (fixture, expected) => {
+			const messages = await lintFixture(fixture, SRC_PATH)
 
-		expect(messages).toHaveLength(1)
-		expect(messages[0]?.message).toContain(expected)
-	})
+			expect(messages).toHaveLength(1)
+			expect(messages[0]?.message).toContain(expected)
+		},
+		30_000
+	)
 
 	it('gives src/** every entry test/ has, plus the write ban and nothing else', async () => {
 		const entriesAt = async (filePath: string) => {
-			const config = await new ESLint().calculateConfigForFile(filePath)
+			const config = await eslint.calculateConfigForFile(filePath)
 			const [, ...entries] = config.rules['no-restricted-syntax'] as [number, ...Record<string, string>[]]
 
 			return entries
@@ -151,7 +167,7 @@ describe('the waitApprov write ban is scoped to src/**', () => {
 		])
 		expect(shared.some((entry) => entry.selector.includes('waitApprov'))).toBe(false)
 		expect(shared.some((entry) => entry.selector.includes('KEYGRIP_KEY_'))).toBe(false)
-	})
+	}, 30_000)
 })
 
 /*
@@ -166,39 +182,55 @@ describe('the waitApprov write ban is scoped to src/**', () => {
  * `REQUIRED_ENV_VARS`. A repo-wide ban would refuse the test that proves the story.
  */
 describe('the KEYGRIP_KEY_ ban is scoped to src/**', () => {
-	it.each(['keygrip-key-member', 'keygrip-key-literal'])('reports %s exactly once under src/', async (fixture) => {
-		const messages = await lintFixture(fixture, SRC_PATH)
+	it.each(['keygrip-key-member', 'keygrip-key-literal'])(
+		'reports %s exactly once under src/',
+		async (fixture) => {
+			const messages = await lintFixture(fixture, SRC_PATH)
 
-		expect(messages).toHaveLength(1)
-		expect(messages[0]?.message).toContain(KEYGRIP_MESSAGE)
-		expect(messages[0]?.severity).toBe(2)
-	})
+			expect(messages).toHaveLength(1)
+			expect(messages[0]?.message).toContain(KEYGRIP_MESSAGE)
+			expect(messages[0]?.severity).toBe(2)
+		},
+		30_000
+	)
 
-	it.each(['keygrip-key-member', 'keygrip-key-literal'])('stays silent on %s under test/', async (fixture) => {
-		expect(await lintFixture(fixture)).toStrictEqual([])
-	})
+	it.each(['keygrip-key-member', 'keygrip-key-literal'])(
+		'stays silent on %s under test/',
+		async (fixture) => {
+			expect(await lintFixture(fixture)).toStrictEqual([])
+		},
+		30_000
+	)
 
 	// The negative half: both selectors are anchored on `process.env`, so the KEK the services really do
 	// read is untouched, and so is the `KEYGRIP_KEY_BYTES` constant a prefix match on the bare name would
 	// have caught.
-	it.each([SRC_PATH, TEST_PATH])('reports nothing on the compliant KEK read at %s', async (filePath) => {
-		expect(await lintFixture('keygrip-kek-compliant', filePath)).toStrictEqual([])
-	})
+	it.each([SRC_PATH, TEST_PATH])(
+		'reports nothing on the compliant KEK read at %s',
+		async (filePath) => {
+			expect(await lintFixture('keygrip-kek-compliant', filePath)).toStrictEqual([])
+		},
+		30_000
+	)
 })
 
 describe('the block stays silent on the shape the services carry', () => {
 	it('reports nothing on the compliant init options', async () => {
 		expect(await lintFixture('compliant')).toStrictEqual([])
-	})
+	}, 30_000)
 
 	// The negative half of the admin-only field ban, and the half that decides whether the rule survives contact with a
 	// reviewer: the two projections the gates really carry stay silent — including the `waitApprov`
 	// both of them now name — and so does prose naming either field. `notes` written with a colon
 	// after it, the way every comment in these repos writes it, falls outside the word boundary the
 	// selector matches on by construction rather than by luck.
-	it.each([SRC_PATH, TEST_PATH])('reports nothing on the real ShopOwner projections at %s', async (filePath) => {
-		expect(await lintFixture('admin-only-compliant', filePath)).toStrictEqual([])
-	})
+	it.each([SRC_PATH, TEST_PATH])(
+		'reports nothing on the real ShopOwner projections at %s',
+		async (filePath) => {
+			expect(await lintFixture('admin-only-compliant', filePath)).toStrictEqual([])
+		},
+		30_000
+	)
 })
 
 const ITEM_CATEGORY_MESSAGE = 'ADR-012: `itemCategory` is written by marketplace-dev-admin-authenticated-resource'
@@ -222,17 +254,21 @@ describe('the itemCategory write ban fires on every shape it names', () => {
 		['item-category-write-call', ITEM_CATEGORY_MESSAGE],
 		['item-category-write-computed', ITEM_CATEGORY_MESSAGE],
 		['item-category-write-alias', ITEM_CATEGORY_ALIAS_MESSAGE]
-	])('reports %s exactly once', async (fixture, expected) => {
-		const messages = await lintFixture(fixture)
+	])(
+		'reports %s exactly once',
+		async (fixture, expected) => {
+			const messages = await lintFixture(fixture)
 
-		expect(messages).toHaveLength(1)
-		expect(messages[0]?.message).toContain(expected)
-		expect(messages[0]?.severity).toBe(2)
-	})
+			expect(messages).toHaveLength(1)
+			expect(messages[0]?.message).toContain(expected)
+			expect(messages[0]?.severity).toBe(2)
+		},
+		30_000
+	)
 
 	it('reports nothing on a read, which is all this tier does with the collection', async () => {
 		expect(await lintFixture('item-category-compliant')).toStrictEqual([])
-	})
+	}, 30_000)
 })
 
 const REDIS_DEL_MESSAGE = 'BCON-08: one Redis key per `del`.'
@@ -256,17 +292,21 @@ describe('the one-key-per-del rule fires on every batched shape', () => {
 		['redis-del-two-arguments', REDIS_DEL_MESSAGE],
 		['redis-del-array-argument', REDIS_DEL_MESSAGE],
 		['redis-del-spread-argument', REDIS_DEL_MESSAGE]
-	])('reports %s exactly once', async (fixture, expected) => {
-		const messages = await lintFixture(fixture)
+	])(
+		'reports %s exactly once',
+		async (fixture, expected) => {
+			const messages = await lintFixture(fixture)
 
-		expect(messages).toHaveLength(1)
-		expect(messages[0]?.message).toContain(expected)
-		expect(messages[0]?.severity).toBe(2)
-	})
+			expect(messages).toHaveLength(1)
+			expect(messages[0]?.message).toContain(expected)
+			expect(messages[0]?.severity).toBe(2)
+		},
+		30_000
+	)
 
 	it('reports nothing on the per-key shape the session code carries', async () => {
 		expect(await lintFixture('redis-del-compliant')).toStrictEqual([])
-	})
+	}, 30_000)
 })
 
 const SEED_MESSAGE = 'An integration test seeds through the raw driver'
@@ -290,7 +330,7 @@ const UNIT_TEST_PATH = 'test/restrictedImportsFixture.mts'
 
 const lintImports = async (name: string, filePath: string) => {
 	const code = await readFile(new URL(`${name}.mts.fixture`, FIXTURES), 'utf8')
-	const [result] = await new ESLint().lintText(code, { filePath })
+	const [result] = await eslint.lintText(code, { filePath })
 
 	return (result?.messages ?? []).filter((message) => message.ruleId === 'no-restricted-imports')
 }
@@ -302,15 +342,15 @@ describe('an integration test may not seed through a Mongoose model', () => {
 		expect(messages).toHaveLength(1)
 		expect(messages[0]?.message).toContain(SEED_MESSAGE)
 		expect(messages[0]?.severity).toBe(2)
-	})
+	}, 30_000)
 
 	it('stays silent on the same import in a unit test, which mocks the model by name', async () => {
 		expect(await lintImports('integration-seed-via-model', UNIT_TEST_PATH)).toStrictEqual([])
-	})
+	}, 30_000)
 
 	it('stays silent on the raw-driver seed every harness here already carries', async () => {
 		expect(await lintImports('integration-seed-via-raw-driver', ITEST_PATH)).toStrictEqual([])
-	})
+	}, 30_000)
 })
 
 const SRC = new URL('../src/', import.meta.url)
