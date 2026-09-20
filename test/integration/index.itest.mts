@@ -13,6 +13,7 @@ import {
 import { ALGORITHM_DETERMINISTIC } from '@axiumine/marketplace-common/encryption/EncryptionAlgorithm'
 import { encryptValue } from '@axiumine/marketplace-common/encryption/fieldEncryption'
 import { isCiphertext } from '@axiumine/marketplace-common/encryption/isCiphertext'
+import type { IRefreshData } from '@axiumine/marketplace-common/others/IRefreshData'
 import { indexSession, sessionIndexKey, sessionKey } from '@axiumine/marketplace-common/others/sessionKeys'
 import { TIER, Tier } from '@axiumine/marketplace-common/others/Tier'
 import bcrypt from '@node-rs/bcrypt'
@@ -452,7 +453,12 @@ async function expectSessionOnCluster(
 	 * one-day cap must read a day here while the key above still reads thirty.
 	 */
 	const capSeconds = Number(sessionCapDays) * 86_400
-	const [fieldTtl] = await redisClient.hTTL(indexKey, field)
+	const fieldTtlReply = await redisClient.hTTL(indexKey, field)
+	// hTTL replies null only when the key itself is gone, which every seed above rules out — but the
+	// client types it that way regardless of which field is asked for, so the miss is named here rather
+	// than destructured past.
+	if (fieldTtlReply === null) throw new Error(`hTTL(${indexKey}) returned null — the index key is gone`)
+	const [fieldTtl] = fieldTtlReply
 
 	expect(fieldTtl).toBeLessThanOrEqual(capSeconds)
 	expect(fieldTtl).toBeGreaterThan(capSeconds - 60)
@@ -600,7 +606,10 @@ describe('login refuses a disabled, deleted or unapproved shopOwner, even with t
 		const { json } = await gql(mutation, { email, password: PASSWORD })
 
 		expect(json.errors).toBeUndefined()
-		expect(json.data?.login.accessToken).toEqual(expect.any(String))
+		// Same cast this file uses everywhere else it reads a field off `data.login` — `data` is typed
+		// as `Record<string, unknown>` because the two response shapes it covers share nothing else.
+		const { accessToken } = json.data?.login as { accessToken: string }
+		expect(accessToken).toEqual(expect.any(String))
 	})
 })
 
@@ -840,7 +849,9 @@ describe('setRedisLoginSession against the live cluster', () => {
 		const accessKey = track(sessionKey(`access:${accessToken}`))
 		const refreshKey = track(sessionKey(`refresh:${refreshToken}`))
 
-		await expect(setRedisLoginSession(accessToken, refreshToken, {}, {})).rejects.toThrow()
+		// The empty refresh data is the point of the test (see comment above) — cast rather than filled
+		// in, since a real IRefreshData would make the HSET this test exists to fail actually succeed.
+		await expect(setRedisLoginSession(accessToken, refreshToken, {}, {} as IRefreshData)).rejects.toThrow()
 
 		expect(await redisClient.hGetAll(accessKey)).toEqual({})
 		expect(await redisClient.hGetAll(refreshKey)).toEqual({})
@@ -902,7 +913,11 @@ describe('a session index field expires on its own', () => {
 
 		// The survivor still carries the remainder of its own cap — the field did not merely outlive the
 		// other one, it is armed with the thirty days its login is entitled to.
-		const [livingTtl] = await redisClient.hTTL(indexKey, livingField)
+		const livingTtlReply = await redisClient.hTTL(indexKey, livingField)
+		// Same null-only-if-the-key-itself-is-gone shape as the guard above — the seed above rules that
+		// out here too, but the client types the miss regardless of which field is asked for.
+		if (livingTtlReply === null) throw new Error(`hTTL(${indexKey}) returned null — the index key is gone`)
+		const [livingTtl] = livingTtlReply
 		expect(livingTtl).toBeLessThanOrEqual(2_592_000)
 		expect(livingTtl).toBeGreaterThan(2_592_000 - 60)
 	})

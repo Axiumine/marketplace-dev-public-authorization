@@ -79,7 +79,11 @@ vi.mock('@axiumine/marketplace-common/others/watchKeygrip', () => ({ watchKeygri
 vi.mock('@axiumine/marketplace-common/others/assertHashFieldTTLSupport', () => ({ assertHashFieldTTLSupport }))
 vi.mock('@lib/db/disconnectAllDatabases.mjs', () => ({ disconnectAllDatabases }))
 vi.mock('koa-bodyparser', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('koa-bodyparser')>()
+	// koa-bodyparser's own types are `export =`: `typeof import('koa-bodyparser')` is the middleware
+	// factory itself, with no `.default`. At runtime, though, `importOriginal()` goes through vitest's
+	// CJS interop, which wraps that factory as `{ default: <the factory> }` — the shape actually
+	// awaited below, and the one the generic here has to name for `actual.default` to type-check.
+	const actual = await importOriginal<{ default: typeof import('koa-bodyparser') }>()
 	return {
 		// koa-bodyparser mutates its `opts` argument in place (sets detectJSON/onerror/
 		// returnRawBody directly on the object it was given), so the options object must be
@@ -360,7 +364,9 @@ describe('SERVICE_NAME', () => {
 	 * a variable they have not written yet goes looking for a line that is not in the file.
 	 */
 	it('reports a missing variable before a misshapen one', () => {
-		const env = { ...validEnv(), REDIS_URL: SHAPED.redisUrl, PORT: MISSHAPEN.port }
+		// Spreading a `Record<string, string>` narrows to the two overridden keys, dropping the index
+		// signature — the widening this line needs back so `delete` can name a key it never declared.
+		const env: Record<string, string> = { ...validEnv(), REDIS_URL: SHAPED.redisUrl, PORT: MISSHAPEN.port }
 		delete env.MONGODB_URI
 
 		expect(() => checkRequiredEnv(env)).toThrow('Missing required environment variable: MONGODB_URI')
