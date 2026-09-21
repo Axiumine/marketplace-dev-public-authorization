@@ -23,7 +23,22 @@ const FIXTURES = new URL('./fixtures/restrictedSyntax/', import.meta.url)
 // cheap alone, but multiplied by every fixture below and run in parallel with the rest of the suite
 // it is slow enough to trip the 5s per-test default. The program is immutable across these calls
 // (same config, only the linted text and path change), so one instance is correct, not a shortcut.
-const eslint = new ESLint()
+const eslint = new ESLint({
+	/*
+	 * ⚠️ `disallowAutomaticSingleRunInference` is what makes the borrowed `SRC_PATH` safe, and it is not
+	 * an optimisation. typescript-estree guesses it is performing a one-off "single run" whenever
+	 * `CI=true` (its `inferSingleRun`), and a single-run program reads every source file from disk — so
+	 * the text handed to `lintText` is discarded for any path a real file occupies, and the rules run
+	 * against the borrowed file's AST over the fixture's text. Here that surfaced as a `RangeError:
+	 * Index out of range` from simple-import-sort, whose report covers an import block ending past the
+	 * end of the shorter fixture: green on a workstation, red on every runner, because nothing sets CI
+	 * locally and GitHub Actions always does. With the option set the parser keeps the watch program,
+	 * which serves the text it was given. Removing this line does not fail here; it fails in CI only.
+	 */
+	overrideConfig: {
+		languageOptions: { parserOptions: { disallowAutomaticSingleRunInference: true } }
+	}
+})
 
 const TLS_MESSAGE = 'certificate verification stays on.'
 const PII_MESSAGE = 'the blanket Sentry PII flag is absent by decision, not set to false.'
