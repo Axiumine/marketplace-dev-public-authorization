@@ -16,11 +16,15 @@ export async function disconnectAllDatabases(exitCode: number = 0): Promise<neve
 		])
 
 		Sentry.captureMessage('All databases disconnected successfully', 'info')
+		// Flushed before exit: this is the last statement standing between the SDK's transport and the
+		// process ending, so an unflushed event here never leaves the machine.
+		await Sentry.flush(2000)
 		process.exit(exitCode)
 	} catch (e) {
 		Sentry.captureException(e, {
 			extra: { detail: 'Error during database disconnection' }
 		})
+		await Sentry.flush(2000)
 		process.exit(1)
 	}
 }
