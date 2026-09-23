@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const captureException = vi.fn()
 const captureMessage = vi.fn()
+const flush = vi.fn()
 const RedisConnect = vi.fn()
 const MongoDBConnect = vi.fn()
 const disconnectAllDatabases = vi.fn()
@@ -52,7 +53,7 @@ const subscriber = { id: 'redis-subscriber', connect: vi.fn() }
 // merely something object-shaped.
 const redisClient = { id: 'redis-client', duplicate: vi.fn(() => subscriber) }
 
-vi.mock('@sentry/node', () => ({ captureException, captureMessage }))
+vi.mock('@sentry/node', () => ({ captureException, captureMessage, flush }))
 // redisClient is imported transitively by the login resolvers; a bare stub is enough because the
 // unit project never connects — only start()'s failure path is exercised here.
 vi.mock('@axiumine/koa-utils/dataSources/Redis', () => ({ RedisConnect, redisClient }))
@@ -457,22 +458,58 @@ describe('process handlers', () => {
 
 	beforeEach(() => {
 		captureException.mockReset()
+		flush.mockReset().mockResolvedValue(true)
 		exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
 	})
 	afterEach(() => exit.mockRestore())
 
-	it('onUnhandledRejection reports the reason and exits 1', () => {
+	// ⚠️ Both handlers are synchronous (Node calls them as plain listeners and never awaits them), so
+	// the fix cannot `await` the flush — it has to happen before `exit` all the same, or a crash event
+	// is queued and then thrown away by the very `process.exit()` a moment later. Asserting `exit` has
+	// NOT been called synchronously, right after the call, is what a version that flushed AFTER exit —
+	// or never flushed at all — would fail: both would make `exit` observable immediately.
+	it('onUnhandledRejection reports the reason, flushes Sentry before exiting 1', async () => {
 		const reason = new Error('boom')
+
 		onUnhandledRejection(reason)
+
 		expect(captureException).toHaveBeenCalledWith(reason)
-		expect(exit).toHaveBeenCalledWith(1)
+		expect(flush).toHaveBeenCalledExactlyOnceWith(2000)
+		expect(exit).not.toHaveBeenCalled()
+
+		await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
 	})
 
-	it('onUncaughtException reports the error and exits 1', () => {
+	it('onUncaughtException reports the error, flushes Sentry before exiting 1', async () => {
 		const error = new Error('kaboom')
+
 		onUncaughtException(error)
+
 		expect(captureException).toHaveBeenCalledWith(error)
-		expect(exit).toHaveBeenCalledWith(1)
+		expect(flush).toHaveBeenCalledExactlyOnceWith(2000)
+		expect(exit).not.toHaveBeenCalled()
+
+		await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
+	})
+
+	// The flush budget is 2 seconds precisely so a stalled or unreachable Sentry ingest endpoint
+	// cannot hang the process past it — this pins the timeout value itself, not just that some
+	// number was passed. Both handlers get their own case: each has its own `.catch(() => undefined)`,
+	// textually identical but a distinct function for coverage purposes.
+	it('still exits 1 if the flush itself rejects, rather than hanging the process (onUnhandledRejection)', async () => {
+		flush.mockRejectedValueOnce(new Error('sentry transport down'))
+
+		onUnhandledRejection(new Error('boom'))
+
+		await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
+	})
+
+	it('still exits 1 if the flush itself rejects, rather than hanging the process (onUncaughtException)', async () => {
+		flush.mockRejectedValueOnce(new Error('sentry transport down'))
+
+		onUncaughtException(new Error('kaboom'))
+
+		await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
 	})
 })
 

@@ -108,16 +108,20 @@ describe('process-level error handlers', () => {
 		exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
 	})
 
-	it('exits 1 on an unhandled rejection', () => {
+	// Both handlers now flush the real SDK before exiting (B14): with no DSN configured in this run,
+	// `Sentry.flush()` resolves near-instantly with no client to drain, but it is still one microtask
+	// hop away from the synchronous call — `exit` is asserted through `vi.waitFor` rather than
+	// immediately after, exactly because it is no longer synchronous.
+	it('exits 1 on an unhandled rejection, after flushing', async () => {
 		onUnhandledRejection(new Error('itest unhandled rejection'))
 
-		expect(exitSpy).toHaveBeenCalledWith(1)
+		await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(1))
 	})
 
-	it('exits 1 on an uncaught exception', () => {
+	it('exits 1 on an uncaught exception, after flushing', async () => {
 		onUncaughtException(new Error('itest uncaught exception'))
 
-		expect(exitSpy).toHaveBeenCalledWith(1)
+		await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(1))
 	})
 })
 

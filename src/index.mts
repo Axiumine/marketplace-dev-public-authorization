@@ -173,12 +173,26 @@ export const gracefulShutdown = async (signal: string, apolloServer: ApolloServe
 
 export function onUnhandledRejection(reason: unknown): void {
 	Sentry.captureException(reason)
-	process.exit(1)
+	// ⚠️ **Flushed before exit, deliberately.** `captureException` only queues the event; without this,
+	// `process.exit()` below tears the process down before the SDK's own transport has a chance to send
+	// it — the exact crash a Sentry alert exists to catch, silently dropped. This handler cannot be
+	// `async` (Node calls it as a plain listener and never awaits it), so the exit is chained onto the
+	// flush instead of awaited: `finally` runs once the flush settles — sent, or gave up at its own
+	// 2-second budget — either way exiting rather than hanging on a Sentry outage. The `catch` is not
+	// optional: this process is still listening for `unhandledRejection` while the flush is in flight, so
+	// a flush that itself rejected (Sentry unreachable) would otherwise surface as a second unhandled
+	// rejection and re-enter this very handler instead of falling straight through to exit.
+	void Sentry.flush(2000)
+		.catch(() => undefined)
+		.finally(() => process.exit(1))
 }
 
 export function onUncaughtException(error: unknown): void {
 	Sentry.captureException(error)
-	process.exit(1)
+	// Same reasoning as `onUnhandledRejection` above.
+	void Sentry.flush(2000)
+		.catch(() => undefined)
+		.finally(() => process.exit(1))
 }
 
 /**
@@ -394,7 +408,10 @@ export async function start() {
 		return { app, httpServer, apolloServer, keygripWatch, keygripSubscriber }
 	} catch (error) {
 		console.error('error', error)
-		Sentry.captureException(error) // @fixme does not send the log, verify!
+		Sentry.captureException(error)
+		// No flush here: `disconnectAllDatabases(1)` below ends in its own `Sentry.flush()` before its
+		// own `process.exit()`, and that flush sends everything still queued — including the event this
+		// line just captured — so a second flush in between would only repeat it.
 		await disconnectAllDatabases(1)
 	}
 }
@@ -417,7 +434,7 @@ if (process.env.NODE_ENV !== 'test') {
 				process.on('SIGINT', () => gracefulShutdown('SIGINT', srv.apolloServer, srv.httpServer))
 			}
 		})
-		.catch((e: unknown) => {
+		.catch(async (e: unknown) => {
 			/*
 			 * ⚠️ The exit code is the whole point, and it used to be **0**. `checkRequiredEnv()` throws
 			 * outside `start()`'s own try, so a missing variable lands here rather than in the
@@ -430,6 +447,10 @@ if (process.env.NODE_ENV !== 'test') {
 			 */
 			console.error('fatal: the service could not start', e)
 			Sentry.captureException(e)
+			// Flushed before exit: nothing downstream of this handler calls disconnectAllDatabases, so
+			// this is the only chance the queued event gets to actually reach Sentry before the process
+			// ends.
+			await Sentry.flush(2000)
 			process.exit(1)
 		})
 }
