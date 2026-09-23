@@ -42,18 +42,22 @@ already tier-agnostic; only `checkAdminAuthorization` is separate. Both end in t
 ## Gate order is a disclosure decision, not style
 
 ⚠️ **Every account-state gate runs *after* the password compare, in all three paths.** `deleted`,
-`disabled` and — for `User` only — `emailVerify.valid` are checked once the hash already matched. An
-account-state answer handed out before a password was supplied tells an attacker the address exists.
-Hoisting one of those checks "to fail fast" turns this endpoint into a registration oracle.
+`disabled` and `emailVerify.valid` — for both `ShopOwner` and `User`, the two self-registering tiers —
+are checked once the hash already matched. An account-state answer handed out before a password was
+supplied tells an attacker the address exists. Hoisting one of those checks "to fail fast" turns this
+endpoint into a registration oracle.
 
 Even after the password matches, every failure throws the same `throwUnauthorizedError`. That is why
 `userVerifyEmailResend` exists on 4027: an unconfirmed customer cannot be told "confirm your email" here
 without telling everyone else who is registered, so the login screen offers the resend unconditionally.
+`ShopOwner` gets the same treatment from `checkShopOwnerEmailVerified`, for a self-registered account
+whose activation link has not been opened.
 
-⚠️ **`waitApprov` is not a login gate.** The field is on `shopOwner` and an admin sets it, but nothing on
-this path reads it — a shop owner awaiting approval logs in and gets a session. The integration suite in
-`marketplace-dev-authenticated-authorization` asserts exactly that, so "fixing" the apparent omission here
-fails a test that exists to pin the behaviour. `User` has no such field at all: customers self-serve.
+⚠️ **`waitApprov` *is* a login gate, on `ShopOwner` only.** The field is on `shopOwner`, an admin raises it
+to park an account pending review, and `tryLoginShopOwner` calls `checkShopOwnerApproval` — after the
+password check, for the same disclosure reason as every gate above — so a parked account cannot open a
+session. `tryLoginShopOwner.test.mts` pins that behaviour. `User` has no such field at all: customers
+self-serve and there is nothing for an admin to approve.
 
 `authPublicHello` is a liveness probe and stays.
 
