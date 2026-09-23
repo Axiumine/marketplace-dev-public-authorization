@@ -116,6 +116,28 @@ describe('loginUser', () => {
 		})
 	})
 
+	// B5: every write path (registration, password reset) normalizes with `.trim().toLowerCase()`
+	// before it ever reaches Mongo, so `login.email` in the collection is always lowercase and
+	// trimmed. Before this fix, only the rate-limit bucket got the normalised address — the DB lookup
+	// and the Redis session hash still got the raw one, so a correct password failed whenever the
+	// caller's casing or whitespace drifted from what was stored.
+	it('normalises the email before it reaches the DB lookup and the Redis session hash, not just the rate limiter', async () => {
+		tryLoginUser.mockResolvedValueOnce({ _id, login: {} })
+
+		await loginUser.resolve(null, { ...args, email: '  Customer@Marketplace.TEST  ' }, ctx)
+
+		expect(tryLoginUser).toHaveBeenCalledExactlyOnceWith('customer@marketplace.test', args.password, {
+			withTransaction,
+			endSession
+		})
+		expect(setRedisLoginSessionUser).toHaveBeenCalledExactlyOnceWith(
+			ACCESS,
+			REFRESH,
+			expect.objectContaining({ email: 'customer@marketplace.test' }),
+			args.rememberMe
+		)
+	})
+
 	it('passes a null lastLogin through on the first login', async () => {
 		tryLoginUser.mockResolvedValueOnce({ _id, login: {} })
 
@@ -138,5 +160,26 @@ describe('loginUser', () => {
 		expect(log).not.toHaveBeenCalled()
 		expect(setLoginCookies).not.toHaveBeenCalled()
 		expect(endSession).toHaveBeenCalledTimes(1)
+	})
+
+	// B43: `session.withTransaction` retries its callback on a `TransientTransactionError` — two
+	// near-simultaneous logins for the same account WriteConflicting inside `updateUserLoginStats` is a
+	// real trigger, not a hypothetical one. Before this fix the Redis mint and the cookie set lived
+	// inside that callback, so a retry minted a second, never-cleaned-up session and could send a
+	// second `Set-Cookie`. Simulated here by making the shared `withTransaction` mock run its callback
+	// twice, exactly as mongoose does on a retry.
+	it('mints the Redis session and sets the cookie once, even when withTransaction retries its callback', async () => {
+		tryLoginUser.mockResolvedValue({ _id, login: {} })
+		withTransaction.mockImplementationOnce(async (fn: () => Promise<void>) => {
+			await fn() // the attempt that hits the WriteConflict
+			return fn() // mongoose's own retry
+		})
+
+		await loginUser.resolve(null, args, ctx)
+
+		expect(tryLoginUser).toHaveBeenCalledTimes(2)
+		expect(updateUserLoginStats).toHaveBeenCalledTimes(2)
+		expect(setRedisLoginSessionUser).toHaveBeenCalledTimes(1)
+		expect(setLoginCookies).toHaveBeenCalledTimes(1)
 	})
 })

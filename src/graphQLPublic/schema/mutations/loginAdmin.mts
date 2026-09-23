@@ -55,22 +55,32 @@ export const loginAdmin = {
 	// metering it metered the whole platform. The per-caller limit is the edge's now, and nothing in this
 	// file reads a request property at all.
 	async resolve(_: unknown, args: IArgs, ctx: IContextLogin) {
-		const { email, password, rememberMe, turnstileToken } = args
+		const { password, rememberMe, turnstileToken } = args
+		// Normalized once, here, the same `.trim().toLowerCase()` every write path already applies before
+		// storing an address — so the rate-limit bucket below, the `login.email` lookup inside
+		// `tryLoginAdmin` and the Redis session hash all agree with what got stored, whatever casing or
+		// stray whitespace the caller's keyboard sent.
+		const email = args.email.trim().toLowerCase()
 
 		// Before the transaction and before bcrypt: the point of the counter is that a refused caller costs
 		// this process one Redis INCR, not a Mongo session plus a 14-round hash comparison.
 		await guardPublicLogin({
 			bucket: 'loginAdmin',
-			email: email.trim().toLowerCase(),
+			email,
 			turnstileToken,
 			perEmailPerHour: PER_EMAIL_PER_HOUR
 		})
 
-		// Never observable: `refreshToken` is not part of the returned object below (only
-		// `accessToken`, `onboardingStep` and `onboardingDone` are), and the happy path always
-		// overwrites it via `refreshToken = generateRefreshToken()` before it reaches
-		// `setLoginCookies` / `setRedisLoginSessionAdmin`. The catch path never reaches those
-		// calls at all (see the note above `tryCatchRethrow` below).
+		// ⚠️ **Lifted out of the transaction callback, along with the Redis mint and the cookie set that
+		// use it.** `session.withTransaction` silently re-invokes its callback on a `TransientTransactionError`
+		// (two near-simultaneous logins for the same account can WriteConflict inside `updateAdminLoginStats`),
+		// and minting a Redis session or setting a cookie from inside that callback would mint — and set —
+		// a second time on every retry. Only the Mongo read and write below stay inside the callback;
+		// everything that is not itself transactional runs once, after the transaction has committed.
+		// The dummy initial value below is never observable: the happy path always overwrites it via
+		// `refreshToken = generateRefreshToken()` before it reaches `setLoginCookies` /
+		// `setRedisLoginSessionAdmin`, and the catch path never reaches those calls at all (see the note
+		// above `tryCatchRethrow` below).
 		// Stryker disable next-line StringLiteral: dead initializer, provably unobservable on any reachable path
 		let refreshToken = ''
 		// Same reasoning: always overwritten by `accessToken = generateAccessToken()` below
@@ -79,6 +89,8 @@ export const loginAdmin = {
 		// `throwIfMongoErr`, and both branches of the `if/else` after it, end in a `throw`).
 		// Stryker disable next-line StringLiteral: dead initializer, provably unobservable on any reachable path
 		let accessToken = ''
+		// Stryker disable next-line ObjectLiteral: dead initializer, provably unobservable on any reachable path
+		let redisData: IRedisDataAdmin = { _id: '', email, tier: TIER.admin }
 
 		const session = await mongoose.startSession()
 
@@ -96,7 +108,7 @@ export const loginAdmin = {
 				// `tier` is what stops this session from being spent on another tier's service.
 				// Every service reads Redis under the same `REDIS_KEY` prefix, so the key alone says
 				// nothing about which collection minted it — the discriminator has to be in the hash.
-				const redisData: IRedisDataAdmin = {
+				redisData = {
 					_id: id.toString(),
 					email,
 					tier: TIER.admin
@@ -106,10 +118,7 @@ export const loginAdmin = {
 				refreshToken = generateRefreshToken()
 				const lastLogin = admin.login.lastLogin ?? null
 
-				await setRedisLoginSessionAdmin(accessToken, refreshToken, redisData, rememberMe)
 				await updateAdminLoginStats(id, lastLogin, rememberMe, session)
-
-				setLoginCookies(ctx, refreshToken)
 			})
 		} catch (e) {
 			// Also unobservable: `tryCatchRethrow` two lines below always throws, so this
@@ -127,6 +136,11 @@ export const loginAdmin = {
 		} finally {
 			await session.endSession()
 		}
+
+		// Only reached once the transaction has committed for good — see the note above `refreshToken`.
+		// A retried callback re-runs the read/write above, idempotently; everything below runs exactly once.
+		await setRedisLoginSessionAdmin(accessToken, refreshToken, redisData, rememberMe)
+		setLoginCookies(ctx, refreshToken)
 
 		return { accessToken, onboardingStep: '', onboardingDone: true }
 	}
