@@ -6,9 +6,11 @@ const lean = vi.fn()
 const sessionFn = vi.fn(() => ({ lean }))
 const findOne = vi.fn(() => ({ session: sessionFn }))
 const checkAdminAuthorization = vi.fn()
+const compareAgainstDummyHash = vi.fn()
 
 vi.mock('@axiumine/marketplace-common/models/MongoDB/Admin', () => ({ Admin: { findOne } }))
 vi.mock('@lib/db/login/checkAdminAuthorization.mjs', () => ({ checkAdminAuthorization }))
+vi.mock('@lib/db/login/compareAgainstDummyHash.mjs', () => ({ compareAgainstDummyHash }))
 
 const { tryLoginAdmin } = await import('../src/lib/db/login/tryLoginAdmin.mts')
 
@@ -24,6 +26,7 @@ describe('tryLoginAdmin', () => {
 		sessionFn.mockClear()
 		findOne.mockClear()
 		checkAdminAuthorization.mockReset()
+		compareAgainstDummyHash.mockReset().mockResolvedValue(undefined)
 	})
 
 	it('returns the lean admin after the password check, inside the caller session', async () => {
@@ -48,6 +51,16 @@ describe('tryLoginAdmin', () => {
 
 		await expect(tryLoginAdmin('nobody@marketplace.test', 'clear', session)).rejects.toThrow('Unauthorized')
 		expect(checkAdminAuthorization).not.toHaveBeenCalled()
+	})
+
+	// B44: an unknown email used to throw immediately while a known one always paid for a bcrypt-14
+	// compare first — a timing oracle for account enumeration ahead of the generic error message.
+	// Running a compare that can never succeed on this branch too equalizes the wall-clock cost.
+	it('runs a dummy bcrypt compare before refusing an unknown admin, with the caller-supplied password', async () => {
+		lean.mockResolvedValueOnce(null)
+
+		await expect(tryLoginAdmin('nobody@marketplace.test', 'the-supplied-password', session)).rejects.toThrow('Unauthorized')
+		expect(compareAgainstDummyHash).toHaveBeenCalledExactlyOnceWith('the-supplied-password')
 	})
 
 	it('propagates the rejection from the password check', async () => {

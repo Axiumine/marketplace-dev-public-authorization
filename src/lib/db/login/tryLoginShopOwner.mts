@@ -3,6 +3,7 @@ import { ShopOwner } from '@axiumine/marketplace-common/models/MongoDB/ShopOwner
 import { checkShopOwnerApproval } from '@axiumine/marketplace-common/others/checkShopOwnerApproval'
 import { checkShopOwnerEmailVerified } from '@axiumine/marketplace-common/others/checkShopOwnerEmailVerified'
 import { checkUserAuthorization } from '@lib/db/login/checkUserAuthorization.mjs'
+import { compareAgainstDummyHash } from '@lib/db/login/compareAgainstDummyHash.mjs'
 import { IShopOwnerLoginCheckData } from '@lib/db/login/IShopOwnerLoginCheckData.mjs'
 import { ClientSession } from 'mongoose'
 
@@ -44,6 +45,9 @@ export async function tryLoginShopOwner(
 		.lean()
 
 	if (user === null) {
+		// ⚠️ Same wall-clock cost as a real compare, so "no such account" cannot be timed apart from
+		// "wrong password" — see `compareAgainstDummyHash`'s own comment.
+		await compareAgainstDummyHash(password)
 		throw throwUnauthorizedError()
 	}
 	await checkUserAuthorization(user, password, user.login.password) // resolves when the password matches, throws otherwise

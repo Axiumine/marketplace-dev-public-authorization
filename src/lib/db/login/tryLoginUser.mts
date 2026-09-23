@@ -1,6 +1,7 @@
 import { throwUnauthorizedError } from '@axiumine/koa-utils/graphQL/throw/throwUnauthorizedError'
 import { User } from '@axiumine/marketplace-common/models/MongoDB/User'
 import { checkUserAuthorization } from '@lib/db/login/checkUserAuthorization.mjs'
+import { compareAgainstDummyHash } from '@lib/db/login/compareAgainstDummyHash.mjs'
 import { IUserLoginCheckData } from '@lib/db/login/IUserLoginCheckData.mjs'
 import { ClientSession } from 'mongoose'
 
@@ -31,6 +32,9 @@ export async function tryLoginUser(email: string, password: string, session: Cli
 		.lean()
 
 	if (user === null) {
+		// ⚠️ Same wall-clock cost as a real compare, so "no such account" cannot be timed apart from
+		// "wrong password" — see `compareAgainstDummyHash`'s own comment.
+		await compareAgainstDummyHash(password)
 		throw throwUnauthorizedError()
 	}
 
