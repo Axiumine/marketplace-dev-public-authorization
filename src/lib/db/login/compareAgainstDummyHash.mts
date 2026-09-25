@@ -8,6 +8,9 @@ import { compareHashAsync } from '@axiumine/koa-utils/lib/hash'
  * behind it and the salt bcrypt drew for it are both irrelevant. Swapping it for a different fixed
  * hash of the same cost changes nothing observable.
  */
+// It hashes a fixed, never-issued password nobody kept, so it authenticates nothing and is a poison
+// value rather than a credential — the whole point of the constant is that no real password matches it.
+// nosemgrep: semgrep.vendor.generic.secrets.security.detected-bcrypt-hash.detected-bcrypt-hash
 const DUMMY_PASSWORD_HASH = '$2b$14$a/hyKqhGryzvbkfvT/5h3.UUO9aGXEmh3VlVVods6LdQXe6PJk/4q'
 
 /**
