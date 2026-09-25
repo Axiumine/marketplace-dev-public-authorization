@@ -102,7 +102,7 @@ export const loginUser = {
 		// transaction has committed.
 		// Stryker disable next-line StringLiteral: dead initializer, provably unobservable on any reachable path
 		let refreshToken = ''
-		// Stryker disable next-line ObjectLiteral: dead initializer, provably unobservable on any reachable path
+		// Stryker disable next-line ObjectLiteral,StringLiteral: dead initializer, provably unobservable on any reachable path
 		let redisData: IRedisDataUser = { _id: '', email, tier: TIER.user }
 
 		const session = await mongoose.startSession()
