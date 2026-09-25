@@ -89,7 +89,7 @@ export const loginAdmin = {
 		// `throwIfMongoErr`, and both branches of the `if/else` after it, end in a `throw`).
 		// Stryker disable next-line StringLiteral: dead initializer, provably unobservable on any reachable path
 		let accessToken = ''
-		// Stryker disable next-line ObjectLiteral: dead initializer, provably unobservable on any reachable path
+		// Stryker disable next-line ObjectLiteral,StringLiteral: dead initializer, provably unobservable on any reachable path
 		let redisData: IRedisDataAdmin = { _id: '', email, tier: TIER.admin }
 
 		const session = await mongoose.startSession()

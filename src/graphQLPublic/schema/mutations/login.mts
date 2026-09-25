@@ -94,7 +94,7 @@ export const login = {
 		// everything that is not itself transactional runs once, after the transaction has committed.
 		// Stryker disable next-line StringLiteral: dead initializer, provably unobservable on any reachable path
 		let refreshToken = ''
-		// Stryker disable next-line ObjectLiteral: dead initializer, provably unobservable on any reachable path
+		// Stryker disable next-line ObjectLiteral,StringLiteral: dead initializer, provably unobservable on any reachable path
 		let redisData: IRedisDataShopOwner = { _id: '', email, tier: TIER.shopOwner }
 
 		const session = await mongoose.startSession()
