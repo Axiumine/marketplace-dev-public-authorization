@@ -24,25 +24,25 @@ import { ClientSession } from 'mongoose'
  * so the frontend's login screen offers the resend unconditionally instead.
  */
 export async function tryLoginUser(email: string, password: string, session: ClientSession): Promise<IUserLoginCheckData> {
-	const user: IUserLoginCheckData | null = await User.findOne(
-		{ 'login.email': email },
-		'_id disabled deleted emailVerify.valid login.password login.firstLogin login.lastLogin'
-	)
-		.session(session)
-		.lean()
+  const user: IUserLoginCheckData | null = await User.findOne(
+    { 'login.email': email },
+    '_id disabled deleted emailVerify.valid login.password login.firstLogin login.lastLogin'
+  )
+    .session(session)
+    .lean()
 
-	if (user === null) {
-		// ⚠️ Same wall-clock cost as a real compare, so "no such account" cannot be timed apart from
-		// "wrong password" — see `compareAgainstDummyHash`'s own comment.
-		await compareAgainstDummyHash(password)
-		throw throwUnauthorizedError()
-	}
+  if (user === null) {
+    // ⚠️ Same wall-clock cost as a real compare, so "no such account" cannot be timed apart from
+    // "wrong password" — see `compareAgainstDummyHash`'s own comment.
+    await compareAgainstDummyHash(password)
+    throw throwUnauthorizedError()
+  }
 
-	await checkUserAuthorization(user, password, user.login.password)
+  await checkUserAuthorization(user, password, user.login.password)
 
-	if (!user.emailVerify?.valid) {
-		throw throwUnauthorizedError()
-	}
+  if (!user.emailVerify?.valid) {
+    throw throwUnauthorizedError()
+  }
 
-	return user
+  return user
 }

@@ -35,14 +35,14 @@ const koaMiddlewareOptions: { context?: () => Promise<unknown> }[] = []
 // Two 64-byte keys, newest first, exactly as loadKeygrip answers. Written as bytes: nothing here is a
 // real signing key, and the pair has to be distinguishable so the order can be asserted.
 const KEYS = [
-	{ id: 'k2', material: Buffer.alloc(64, 17).toString('base64'), createdAt: '2026-08-12T09:14:22.581Z' },
-	{ id: 'k1', material: Buffer.alloc(64, 34).toString('base64'), createdAt: '2026-05-01T08:00:00.000Z' }
+  { id: 'k2', material: Buffer.alloc(64, 17).toString('base64'), createdAt: '2026-08-12T09:14:22.581Z' },
+  { id: 'k1', material: Buffer.alloc(64, 34).toString('base64'), createdAt: '2026-05-01T08:00:00.000Z' }
 ]
 
 // What a rotation hands back: a key this process has never signed with in front of the ones it has.
 const ROTATED_KEYS = [
-	{ id: 'k3', material: Buffer.alloc(64, 51).toString('base64'), createdAt: '2026-08-12T11:02:00.000Z' },
-	...KEYS
+  { id: 'k3', material: Buffer.alloc(64, 51).toString('base64'), createdAt: '2026-08-12T11:02:00.000Z' },
+  ...KEYS
 ]
 
 // The connection watchKeygrip subscribes on. Identifiable for the same reason redisClient is: the
@@ -80,75 +80,75 @@ vi.mock('@axiumine/marketplace-common/others/watchKeygrip', () => ({ watchKeygri
 vi.mock('@axiumine/marketplace-common/others/assertHashFieldTTLSupport', () => ({ assertHashFieldTTLSupport }))
 vi.mock('@lib/db/disconnectAllDatabases.mjs', () => ({ disconnectAllDatabases }))
 vi.mock('koa-bodyparser', async (importOriginal) => {
-	// koa-bodyparser's own types are `export =`: `typeof import('koa-bodyparser')` is the middleware
-	// factory itself, with no `.default`. At runtime, though, `importOriginal()` goes through vitest's
-	// CJS interop, which wraps that factory as `{ default: <the factory> }` — the shape actually
-	// awaited below, and the one the generic here has to name for `actual.default` to type-check.
-	const actual = await importOriginal<{ default: typeof import('koa-bodyparser') }>()
-	return {
-		// koa-bodyparser mutates its `opts` argument in place (sets detectJSON/onerror/
-		// returnRawBody directly on the object it was given), so the options object must be
-		// snapshotted with a shallow copy BEFORE calling through, or the recorded value would
-		// reflect koa-bodyparser's post-mutation state instead of what src/index.mts passed in.
-		default: (options: Parameters<typeof actual.default>[0]) => {
-			bodyParserOptions.push({ ...options })
-			return actual.default(options)
-		}
-	}
+  // koa-bodyparser's own types are `export =`: `typeof import('koa-bodyparser')` is the middleware
+  // factory itself, with no `.default`. At runtime, though, `importOriginal()` goes through vitest's
+  // CJS interop, which wraps that factory as `{ default: <the factory> }` — the shape actually
+  // awaited below, and the one the generic here has to name for `actual.default` to type-check.
+  const actual = await importOriginal<{ default: typeof import('koa-bodyparser') }>()
+  return {
+    // koa-bodyparser mutates its `opts` argument in place (sets detectJSON/onerror/
+    // returnRawBody directly on the object it was given), so the options object must be
+    // snapshotted with a shallow copy BEFORE calling through, or the recorded value would
+    // reflect koa-bodyparser's post-mutation state instead of what src/index.mts passed in.
+    default: (options: Parameters<typeof actual.default>[0]) => {
+      bodyParserOptions.push({ ...options })
+      return actual.default(options)
+    }
+  }
 })
 vi.mock('@apollo/server', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('@apollo/server')>()
-	class SpiedApolloServer extends actual.ApolloServer {
-		constructor(options: ConstructorParameters<typeof actual.ApolloServer>[0]) {
-			// ApolloServer's real constructor appends its own built-in plugins (landing page,
-			// usage reporting, ...) directly onto the `plugins` array it was given, so the count
-			// must be read BEFORE calling super() — reading it after would count Apollo's own
-			// plugins alongside ours. Referencing the constructor parameter before super() is
-			// fine; only `this` is off-limits until super() runs.
-			const pluginCount = options?.plugins?.length
-			const csrfPrevention = options?.csrfPrevention
-			super(options)
-			apolloServerOptions.push({ pluginCount, csrfPrevention })
-		}
-	}
-	return { ...actual, ApolloServer: SpiedApolloServer }
+  const actual = await importOriginal<typeof import('@apollo/server')>()
+  class SpiedApolloServer extends actual.ApolloServer {
+    constructor(options: ConstructorParameters<typeof actual.ApolloServer>[0]) {
+      // ApolloServer's real constructor appends its own built-in plugins (landing page,
+      // usage reporting, ...) directly onto the `plugins` array it was given, so the count
+      // must be read BEFORE calling super() — reading it after would count Apollo's own
+      // plugins alongside ours. Referencing the constructor parameter before super() is
+      // fine; only `this` is off-limits until super() runs.
+      const pluginCount = options?.plugins?.length
+      const csrfPrevention = options?.csrfPrevention
+      super(options)
+      apolloServerOptions.push({ pluginCount, csrfPrevention })
+    }
+  }
+  return { ...actual, ApolloServer: SpiedApolloServer }
 })
 // Recording wrapper only: `koaMiddleware` is re-exported untouched apart from the push, because what
 // is under test is the options literal src/index.mts builds, not the integration's own behaviour.
 // Typed through `unknown[]` rather than `Parameters<>`: koaMiddleware is generic in its context type,
 // and naming that type here would fix the very thing the assertion is meant to read back.
 vi.mock('@as-integrations/koa', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('@as-integrations/koa')>()
-	const real = actual.koaMiddleware as unknown as (...args: unknown[]) => unknown
-	return {
-		...actual,
-		koaMiddleware: (...args: unknown[]) => {
-			koaMiddlewareOptions.push(args[1] as { context?: () => Promise<unknown> })
-			return real(...args)
-		}
-	}
+  const actual = await importOriginal<typeof import('@as-integrations/koa')>()
+  const real = actual.koaMiddleware as unknown as (...args: unknown[]) => unknown
+  return {
+    ...actual,
+    koaMiddleware: (...args: unknown[]) => {
+      koaMiddlewareOptions.push(args[1] as { context?: () => Promise<unknown> })
+      return real(...args)
+    }
+  }
 })
 
 const {
-	ENDPOINT,
-	SERVICE_NAME,
-	REQUIRED_ENV_VARS,
-	ENV_SHAPES,
-	checkRequiredEnv,
-	buildValidationRules,
-	healthResponse,
-	logListening,
-	gracefulShutdown,
-	onUnhandledRejection,
-	onUncaughtException,
-	createServer,
-	start
+  ENDPOINT,
+  SERVICE_NAME,
+  REQUIRED_ENV_VARS,
+  ENV_SHAPES,
+  checkRequiredEnv,
+  buildValidationRules,
+  healthResponse,
+  logListening,
+  gracefulShutdown,
+  onUnhandledRejection,
+  onUncaughtException,
+  createServer,
+  start
 } = await import('../src/index.mts')
 
 describe('ENDPOINT', () => {
-	it('is the /public-authorization path', () => {
-		expect(ENDPOINT).toBe('/public-authorization')
-	})
+  it('is the /public-authorization path', () => {
+    expect(ENDPOINT).toBe('/public-authorization')
+  })
 })
 
 /*
@@ -160,19 +160,19 @@ describe('ENDPOINT', () => {
  * a green run. Written here it generates the same cases in all nine.
  */
 const EXPECTED_SHAPES: Readonly<Record<string, EnvShape>> = {
-	PORT: 'port',
-	REDIS_IS_CLUSTER: 'flag01',
-	REDIS_URL: 'redisUrl',
-	REDIS_DB1_HOST: 'hostname',
-	REDIS_DB2_HOST: 'hostname',
-	REDIS_DB3_HOST: 'hostname',
-	REDIS_DB1_PORT: 'port',
-	REDIS_DB2_PORT: 'port',
-	REDIS_DB3_PORT: 'port',
-	REDIS_KEY: 'keyPrefix',
-	MONGODB_URI: 'mongoUri',
-	CSFLE_MASTER_KEY_PATH: 'absolutePath',
-	CSFLE_KEY_VAULT_NAMESPACE: 'namespace'
+  PORT: 'port',
+  REDIS_IS_CLUSTER: 'flag01',
+  REDIS_URL: 'redisUrl',
+  REDIS_DB1_HOST: 'hostname',
+  REDIS_DB2_HOST: 'hostname',
+  REDIS_DB3_HOST: 'hostname',
+  REDIS_DB1_PORT: 'port',
+  REDIS_DB2_PORT: 'port',
+  REDIS_DB3_PORT: 'port',
+  REDIS_KEY: 'keyPrefix',
+  MONGODB_URI: 'mongoUri',
+  CSFLE_MASTER_KEY_PATH: 'absolutePath',
+  CSFLE_KEY_VAULT_NAMESPACE: 'namespace'
 }
 
 /**
@@ -184,333 +184,333 @@ const EXPECTED_SHAPES: Readonly<Record<string, EnvShape>> = {
  * `'x'` landed on: every test below that turns on `REDIS_URL` still tests what it used to.
  */
 const SHAPED: Readonly<Record<EnvShape, string>> = {
-	absolutePath: '/srv/marketplace',
-	email: 'noreply@shop.lan',
-	flag01: '0',
-	hostname: 'db1',
-	keyPrefix: 'marketplaceDev:',
-	mongoUri: 'mongodb://127.0.0.1:27017/dbMarketplaceDev',
-	namespace: 'dbMarketplaceDev.__keyVault',
-	origin: 'https://shop.lan',
-	// ⚠️ `0`, not a real port: `validEnv()` reaches `start()` in the tests below and a fixed number would
-	// make them bind it for real — colliding with whichever service of this fleet is running on the
-	// developer's machine. `0` is the ephemeral port the integration projects bind on for the same reason.
-	port: '0',
-	redisUrl: 'redis://127.0.0.1:6379'
+  absolutePath: '/srv/marketplace',
+  email: 'noreply@shop.lan',
+  flag01: '0',
+  hostname: 'db1',
+  keyPrefix: 'marketplaceDev:',
+  mongoUri: 'mongodb://127.0.0.1:27017/dbMarketplaceDev',
+  namespace: 'dbMarketplaceDev.__keyVault',
+  origin: 'https://shop.lan',
+  // ⚠️ `0`, not a real port: `validEnv()` reaches `start()` in the tests below and a fixed number would
+  // make them bind it for real — colliding with whichever service of this fleet is running on the
+  // developer's machine. `0` is the ephemeral port the integration projects bind on for the same reason.
+  port: '0',
+  redisUrl: 'redis://127.0.0.1:6379'
 }
 
 /** One value of the wrong kind per shape, each a mistake a real environment makes rather than nonsense. */
 const MISSHAPEN: Readonly<Record<EnvShape, string>> = {
-	absolutePath: 'srv/marketplace',
-	email: 'noreply.shop.lan',
-	flag01: 'true',
-	hostname: 'redis://db1',
-	keyPrefix: 'marketplaceDev',
-	mongoUri: 'redis://127.0.0.1:6379',
-	namespace: 'dbMarketplaceDev',
-	origin: 'https://shop.lan/',
-	port: '4027x',
-	redisUrl: 'mongodb://127.0.0.1:27017/dbMarketplaceDev'
+  absolutePath: 'srv/marketplace',
+  email: 'noreply.shop.lan',
+  flag01: 'true',
+  hostname: 'redis://db1',
+  keyPrefix: 'marketplaceDev',
+  mongoUri: 'redis://127.0.0.1:6379',
+  namespace: 'dbMarketplaceDev',
+  origin: 'https://shop.lan/',
+  port: '4027x',
+  redisUrl: 'mongodb://127.0.0.1:27017/dbMarketplaceDev'
 }
 
 const shaped = (name: string): string => SHAPED[EXPECTED_SHAPES[name]] ?? 'x'
 const validEnv = (): Record<string, string> => Object.fromEntries(REQUIRED_ENV_VARS.map((k) => [k, shaped(k)]))
 
 describe('checkRequiredEnv', () => {
-	/*
-	 * ⚠️ The whole list, by value and in order, rather than a length or a `toContain`. This array is a
-	 * contract with every environment the service is deployed into, and both ways of breaking it are
-	 * silent: a name dropped from here turns a fatal misconfiguration into a service that starts and
-	 * fails later, at a request, somewhere that does not name the cause; a name added here and read
-	 * nowhere makes every environment carry a value that does nothing. A length check passes a swap and
-	 * a `toContain` passes an addition, so neither notices the change. The order is asserted too — the
-	 * boot names the *first* missing variable, and that is the one an admin goes looking for.
-	 */
-	it('requires exactly these 15 variables, in this order', () => {
-		expect(REQUIRED_ENV_VARS).toStrictEqual([
-			'PORT',
-			'KEYGRIP_KEK',
-			'REDIS_IS_CLUSTER',
-			'REDIS_DB1_HOST',
-			'REDIS_DB2_HOST',
-			'REDIS_DB3_HOST',
-			'REDIS_DB1_PORT',
-			'REDIS_DB2_PORT',
-			'REDIS_DB3_PORT',
-			'REDIS_USERNAME',
-			'REDIS_PASSWORD',
-			'REDIS_KEY',
-			'MONGODB_URI',
-			'CSFLE_MASTER_KEY_PATH',
-			'CSFLE_KEY_VAULT_NAMESPACE'
-		])
-	})
+  /*
+   * ⚠️ The whole list, by value and in order, rather than a length or a `toContain`. This array is a
+   * contract with every environment the service is deployed into, and both ways of breaking it are
+   * silent: a name dropped from here turns a fatal misconfiguration into a service that starts and
+   * fails later, at a request, somewhere that does not name the cause; a name added here and read
+   * nowhere makes every environment carry a value that does nothing. A length check passes a swap and
+   * a `toContain` passes an addition, so neither notices the change. The order is asserted too — the
+   * boot names the *first* missing variable, and that is the one an admin goes looking for.
+   */
+  it('requires exactly these 15 variables, in this order', () => {
+    expect(REQUIRED_ENV_VARS).toStrictEqual([
+      'PORT',
+      'KEYGRIP_KEK',
+      'REDIS_IS_CLUSTER',
+      'REDIS_DB1_HOST',
+      'REDIS_DB2_HOST',
+      'REDIS_DB3_HOST',
+      'REDIS_DB1_PORT',
+      'REDIS_DB2_PORT',
+      'REDIS_DB3_PORT',
+      'REDIS_USERNAME',
+      'REDIS_PASSWORD',
+      'REDIS_KEY',
+      'MONGODB_URI',
+      'CSFLE_MASTER_KEY_PATH',
+      'CSFLE_KEY_VAULT_NAMESPACE'
+    ])
+  })
 
-	// ⚠️ `REDIS_URL` is set here and is deliberately NOT in the list: it is required only when
-	// `REDIS_IS_CLUSTER` is not `'1'`, which is the branch `validEnv()`'s `'0'` lands on.
-	it('passes when every required variable is set', () => {
-		const env = { ...validEnv(), REDIS_URL: 'redis://127.0.0.1:6379' }
-		expect(() => checkRequiredEnv(env)).not.toThrow()
-	})
+  // ⚠️ `REDIS_URL` is set here and is deliberately NOT in the list: it is required only when
+  // `REDIS_IS_CLUSTER` is not `'1'`, which is the branch `validEnv()`'s `'0'` lands on.
+  it('passes when every required variable is set', () => {
+    const env = { ...validEnv(), REDIS_URL: 'redis://127.0.0.1:6379' }
+    expect(() => checkRequiredEnv(env)).not.toThrow()
+  })
 
-	it('throws naming the first missing variable', () => {
-		expect(() => checkRequiredEnv({})).toThrow(`Missing required environment variable: ${REQUIRED_ENV_VARS[0]}`)
-	})
+  it('throws naming the first missing variable', () => {
+    expect(() => checkRequiredEnv({})).toThrow(`Missing required environment variable: ${REQUIRED_ENV_VARS[0]}`)
+  })
 
-	// This tier reaches MongoDB directly (the login resolvers read shopOwner/admin), so unlike
-	// the authorization services MONGODB_URI is part of the boot contract.
-	it('requires MONGODB_URI', () => {
-		expect(REQUIRED_ENV_VARS).toContain('MONGODB_URI')
-	})
+  // This tier reaches MongoDB directly (the login resolvers read shopOwner/admin), so unlike
+  // the authorization services MONGODB_URI is part of the boot contract.
+  it('requires MONGODB_URI', () => {
+    expect(REQUIRED_ENV_VARS).toContain('MONGODB_URI')
+  })
 
-	// Named as literals, because neither test above can see WHICH names the list carries: the first
-	// builds its environment out of the list itself, so a corrupted entry is satisfied by the very
-	// stub the corruption produced. Both are ADR-029's boot contract — every login on this tier
-	// finds its account by a deterministic ciphertext of the email address, so a service that came
-	// up without them would answer "no such account" to a correct password.
-	it('requires the two field-encryption variables by name', () => {
-		expect(REQUIRED_ENV_VARS).toContain('CSFLE_MASTER_KEY_PATH')
-		expect(REQUIRED_ENV_VARS).toContain('CSFLE_KEY_VAULT_NAMESPACE')
-	})
+  // Named as literals, because neither test above can see WHICH names the list carries: the first
+  // builds its environment out of the list itself, so a corrupted entry is satisfied by the very
+  // stub the corruption produced. Both are ADR-029's boot contract — every login on this tier
+  // finds its account by a deterministic ciphertext of the email address, so a service that came
+  // up without them would answer "no such account" to a correct password.
+  it('requires the two field-encryption variables by name', () => {
+    expect(REQUIRED_ENV_VARS).toContain('CSFLE_MASTER_KEY_PATH')
+    expect(REQUIRED_ENV_VARS).toContain('CSFLE_KEY_VAULT_NAMESPACE')
+  })
 
-	/*
-	 * ⚠️ ADR-034, and the same literal-name argument as the two above. The KEK is the only cookie-key
-	 * material this service still reads from its environment; the signing keys themselves come from
-	 * Redis. The two old names are asserted GONE, not merely absent from the code: leaving them in the
-	 * boot contract would keep a service refusing to start over variables nothing reads any more.
-	 */
-	it('requires the KEK by name, and no longer the signing keys themselves', () => {
-		expect(REQUIRED_ENV_VARS).toContain('KEYGRIP_KEK')
-		expect(REQUIRED_ENV_VARS).not.toContain('KEYGRIP_KEY_1')
-		expect(REQUIRED_ENV_VARS).not.toContain('KEYGRIP_KEY_2')
-	})
+  /*
+   * ⚠️ ADR-034, and the same literal-name argument as the two above. The KEK is the only cookie-key
+   * material this service still reads from its environment; the signing keys themselves come from
+   * Redis. The two old names are asserted GONE, not merely absent from the code: leaving them in the
+   * boot contract would keep a service refusing to start over variables nothing reads any more.
+   */
+  it('requires the KEK by name, and no longer the signing keys themselves', () => {
+    expect(REQUIRED_ENV_VARS).toContain('KEYGRIP_KEK')
+    expect(REQUIRED_ENV_VARS).not.toContain('KEYGRIP_KEY_1')
+    expect(REQUIRED_ENV_VARS).not.toContain('KEYGRIP_KEY_2')
+  })
 
-	/*
-	 * ⚠️ **The single-node branch — the one `SETUP.md` puts a fresh machine on.** `REDIS_URL` is not in
-	 * `REQUIRED_ENV_VARS` and must not be: the committed `env` ships it empty because this stack runs the
-	 * cluster branch, where nothing reads it. So the guard is a branch of its own and gets its own tests.
-	 * Unset, it is an error nowhere else — node-redis defaults the url to `redis://localhost:6379` and the
-	 * service connects to whatever answers there, which is the wrong-but-populated environment
-	 * `RISK_REGISTER` R04 describes.
-	 */
-	it('requires REDIS_URL when REDIS_IS_CLUSTER is not "1"', () => {
-		const env = validEnv()
-		env.REDIS_IS_CLUSTER = '0'
+  /*
+   * ⚠️ **The single-node branch — the one `SETUP.md` puts a fresh machine on.** `REDIS_URL` is not in
+   * `REQUIRED_ENV_VARS` and must not be: the committed `env` ships it empty because this stack runs the
+   * cluster branch, where nothing reads it. So the guard is a branch of its own and gets its own tests.
+   * Unset, it is an error nowhere else — node-redis defaults the url to `redis://localhost:6379` and the
+   * service connects to whatever answers there, which is the wrong-but-populated environment
+   * `RISK_REGISTER` R04 describes.
+   */
+  it('requires REDIS_URL when REDIS_IS_CLUSTER is not "1"', () => {
+    const env = validEnv()
+    env.REDIS_IS_CLUSTER = '0'
 
-		expect(() => checkRequiredEnv(env)).toThrow('Missing required environment variable: REDIS_URL')
-	})
+    expect(() => checkRequiredEnv(env)).toThrow('Missing required environment variable: REDIS_URL')
+  })
 
-	it('accepts the single-node branch once REDIS_URL names a server', () => {
-		const env = validEnv()
-		env.REDIS_IS_CLUSTER = '0'
-		env.REDIS_URL = 'redis://127.0.0.1:6379'
+  it('accepts the single-node branch once REDIS_URL names a server', () => {
+    const env = validEnv()
+    env.REDIS_IS_CLUSTER = '0'
+    env.REDIS_URL = 'redis://127.0.0.1:6379'
 
-		expect(() => checkRequiredEnv(env)).not.toThrow()
-	})
+    expect(() => checkRequiredEnv(env)).not.toThrow()
+  })
 
-	// ⚠️ The cluster branch builds its client from REDIS_DB1..DB3 and never reads REDIS_URL, so demanding it
-	// here would refuse the boot of every machine this workspace ships configured. `'1'` exactly, as a
-	// string: that is the comparison koa-utils makes, and `1` or `'true'` takes the single-node branch.
-	it('does not require REDIS_URL on the cluster branch', () => {
-		const env = validEnv()
-		env.REDIS_IS_CLUSTER = '1'
+  // ⚠️ The cluster branch builds its client from REDIS_DB1..DB3 and never reads REDIS_URL, so demanding it
+  // here would refuse the boot of every machine this workspace ships configured. `'1'` exactly, as a
+  // string: that is the comparison koa-utils makes, and `1` or `'true'` takes the single-node branch.
+  it('does not require REDIS_URL on the cluster branch', () => {
+    const env = validEnv()
+    env.REDIS_IS_CLUSTER = '1'
 
-		expect(() => checkRequiredEnv(env)).not.toThrow()
-	})
+    expect(() => checkRequiredEnv(env)).not.toThrow()
+  })
 })
 
 // The name this service writes into the keygrip holders table. Asserted as a literal because the
 // table is how an admin tells five services apart, and a row nobody recognises is worse than no row.
 describe('SERVICE_NAME', () => {
-	it('is the repository name', () => {
-		expect(SERVICE_NAME).toBe('marketplace-dev-public-authorization')
-	})
+  it('is the repository name', () => {
+    expect(SERVICE_NAME).toBe('marketplace-dev-public-authorization')
+  })
 
-	/*
-	 * ⚠️ The whole map, by value, for the same reason the array above is asserted whole: both ways of
-	 * breaking it are silent. A name dropped from `ENV_SHAPES` stops being checked and the boot goes back
-	 * to accepting any non-empty string in that slot; a shape changed to the wrong one refuses a correct
-	 * value on the next machine provisioned. Neither shows up in a run of this suite otherwise — and it is
-	 * also what ties `EXPECTED_SHAPES` to the module, so the table cannot quietly drift into testing a map
-	 * the service does not use.
-	 */
-	it('shape-checks exactly these names', () => {
-		expect(ENV_SHAPES).toStrictEqual(EXPECTED_SHAPES)
-	})
+  /*
+   * ⚠️ The whole map, by value, for the same reason the array above is asserted whole: both ways of
+   * breaking it are silent. A name dropped from `ENV_SHAPES` stops being checked and the boot goes back
+   * to accepting any non-empty string in that slot; a shape changed to the wrong one refuses a correct
+   * value on the next machine provisioned. Neither shows up in a run of this suite otherwise — and it is
+   * also what ties `EXPECTED_SHAPES` to the module, so the table cannot quietly drift into testing a map
+   * the service does not use.
+   */
+  it('shape-checks exactly these names', () => {
+    expect(ENV_SHAPES).toStrictEqual(EXPECTED_SHAPES)
+  })
 
-	/*
-	 * One wrong-kind value per name, on an environment that is otherwise complete and well formed — so
-	 * the only thing that can fail is the shape pass, and the message must name that one variable.
-	 * `REDIS_URL` is spread in because a misshapen `REDIS_IS_CLUSTER` is not `'1'` and puts the check on
-	 * the single-node branch, where an absent url is a *presence* fault that would mask the shape one.
-	 */
-	it.each(Object.entries(EXPECTED_SHAPES))('refuses a %s that is not a valid %s', (name, shape) => {
-		const env = { ...validEnv(), REDIS_URL: SHAPED.redisUrl, [name]: MISSHAPEN[shape] }
+  /*
+   * One wrong-kind value per name, on an environment that is otherwise complete and well formed — so
+   * the only thing that can fail is the shape pass, and the message must name that one variable.
+   * `REDIS_URL` is spread in because a misshapen `REDIS_IS_CLUSTER` is not `'1'` and puts the check on
+   * the single-node branch, where an absent url is a *presence* fault that would mask the shape one.
+   */
+  it.each(Object.entries(EXPECTED_SHAPES))('refuses a %s that is not a valid %s', (name, shape) => {
+    const env = { ...validEnv(), REDIS_URL: SHAPED.redisUrl, [name]: MISSHAPEN[shape] }
 
-		expect(() => checkRequiredEnv(env)).toThrow(`ENV_SHAPE_INVALID: ${name} must be `)
-	})
+    expect(() => checkRequiredEnv(env)).toThrow(`ENV_SHAPE_INVALID: ${name} must be `)
+  })
 
-	// Every fault at once: provisioning a machine is when this fires, and one name per restart is a queue.
-	it('names every misshapen variable in one message', () => {
-		const env = { ...validEnv(), REDIS_URL: SHAPED.redisUrl, PORT: MISSHAPEN.port, REDIS_KEY: MISSHAPEN.keyPrefix }
+  // Every fault at once: provisioning a machine is when this fires, and one name per restart is a queue.
+  it('names every misshapen variable in one message', () => {
+    const env = { ...validEnv(), REDIS_URL: SHAPED.redisUrl, PORT: MISSHAPEN.port, REDIS_KEY: MISSHAPEN.keyPrefix }
 
-		expect(() => checkRequiredEnv(env)).toThrow(
-			'ENV_SHAPE_INVALID: PORT must be a TCP port between 0 and 65535; REDIS_KEY must be a key prefix ending in ":".'
-		)
-	})
+    expect(() => checkRequiredEnv(env)).toThrow(
+      'ENV_SHAPE_INVALID: PORT must be a TCP port between 0 and 65535; REDIS_KEY must be a key prefix ending in ":".'
+    )
+  })
 
-	/*
-	 * ⚠️ Presence first, shape second, and the order is the assertion. One name is unset here *and*
-	 * `PORT` is misshapen; the boot must name the missing one, because an admin told to fix a format in
-	 * a variable they have not written yet goes looking for a line that is not in the file.
-	 */
-	it('reports a missing variable before a misshapen one', () => {
-		// Spreading a `Record<string, string>` narrows to the two overridden keys, dropping the index
-		// signature — the widening this line needs back so `delete` can name a key it never declared.
-		const env: Record<string, string> = { ...validEnv(), REDIS_URL: SHAPED.redisUrl, PORT: MISSHAPEN.port }
-		delete env.MONGODB_URI
+  /*
+   * ⚠️ Presence first, shape second, and the order is the assertion. One name is unset here *and*
+   * `PORT` is misshapen; the boot must name the missing one, because an admin told to fix a format in
+   * a variable they have not written yet goes looking for a line that is not in the file.
+   */
+  it('reports a missing variable before a misshapen one', () => {
+    // Spreading a `Record<string, string>` narrows to the two overridden keys, dropping the index
+    // signature — the widening this line needs back so `delete` can name a key it never declared.
+    const env: Record<string, string> = { ...validEnv(), REDIS_URL: SHAPED.redisUrl, PORT: MISSHAPEN.port }
+    delete env.MONGODB_URI
 
-		expect(() => checkRequiredEnv(env)).toThrow('Missing required environment variable: MONGODB_URI')
-	})
+    expect(() => checkRequiredEnv(env)).toThrow('Missing required environment variable: MONGODB_URI')
+  })
 })
 
 describe('buildValidationRules', () => {
-	it('is empty outside production', () => {
-		expect(buildValidationRules({ NODE_ENV: 'test' })).toEqual([])
-	})
+  it('is empty outside production', () => {
+    expect(buildValidationRules({ NODE_ENV: 'test' })).toEqual([])
+  })
 
-	it('caps depth and blocks introspection in production', () => {
-		expect(buildValidationRules({ NODE_ENV: 'production' })).toHaveLength(2)
-	})
+  it('caps depth and blocks introspection in production', () => {
+    expect(buildValidationRules({ NODE_ENV: 'production' })).toHaveLength(2)
+  })
 })
 
 describe('healthResponse', () => {
-	it('reports OK with a round-trippable ISO timestamp', () => {
-		const res = healthResponse()
-		expect(res.status).toBe('OK')
-		expect(res.timestamp).toBe(new Date(res.timestamp).toISOString())
-	})
+  it('reports OK with a round-trippable ISO timestamp', () => {
+    const res = healthResponse()
+    expect(res.status).toBe('OK')
+    expect(res.timestamp).toBe(new Date(res.timestamp).toISOString())
+  })
 })
 
 describe('logListening', () => {
-	let info: ReturnType<typeof vi.spyOn>
+  let info: ReturnType<typeof vi.spyOn>
 
-	beforeEach(() => {
-		captureMessage.mockReset()
-		info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
-	})
-	afterEach(() => {
-		info.mockRestore()
-		vi.unstubAllEnvs()
-	})
+  beforeEach(() => {
+    captureMessage.mockReset()
+    info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  })
+  afterEach(() => {
+    info.mockRestore()
+    vi.unstubAllEnvs()
+  })
 
-	// The real call site in start() invokes logListening() with NO argument at all, falling back
-	// to process.env — that is the path that actually shipped `undefined` as the host once
-	// HOSTNAME was removed from the env template while the old banner still read it. Exercising
-	// the explicit-argument overload alone hid that regression, so this test stubs process.env
-	// and calls the function exactly the way production does.
-	it('with no argument, builds the banner from process.env, exactly as start() calls it', () => {
-		vi.stubEnv('NODE_ENV', 'test')
-		vi.stubEnv('PORT', '4028')
+  // The real call site in start() invokes logListening() with NO argument at all, falling back
+  // to process.env — that is the path that actually shipped `undefined` as the host once
+  // HOSTNAME was removed from the env template while the old banner still read it. Exercising
+  // the explicit-argument overload alone hid that regression, so this test stubs process.env
+  // and calls the function exactly the way production does.
+  it('with no argument, builds the banner from process.env, exactly as start() calls it', () => {
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('PORT', '4028')
 
-		logListening()
+    logListening()
 
-		expect(info).toHaveBeenCalledExactlyOnceWith('Serving http://*:4028/public-authorization for test.')
-		expect(captureMessage).not.toHaveBeenCalled()
-	})
+    expect(info).toHaveBeenCalledExactlyOnceWith('Serving http://*:4028/public-authorization for test.')
+    expect(captureMessage).not.toHaveBeenCalled()
+  })
 
-	it('logs to the console only, outside production', () => {
-		logListening({ NODE_ENV: 'test', PORT: '4028' })
-		expect(info).toHaveBeenCalledExactlyOnceWith('Serving http://*:4028/public-authorization for test.')
-		expect(captureMessage).not.toHaveBeenCalled()
-	})
+  it('logs to the console only, outside production', () => {
+    logListening({ NODE_ENV: 'test', PORT: '4028' })
+    expect(info).toHaveBeenCalledExactlyOnceWith('Serving http://*:4028/public-authorization for test.')
+    expect(captureMessage).not.toHaveBeenCalled()
+  })
 
-	it('also mirrors the banner to Sentry in production, naming every interface with *, never a host', () => {
-		logListening({ NODE_ENV: 'production', PORT: '80' })
-		// The banner never names a host: the server binds every interface (see start()), so `*`
-		// stands in for the address. The expected string is a hardcoded literal, not built from
-		// the imported ENDPOINT/PORT, so a mutant that corrupts either still fails this match.
-		expect(captureMessage).toHaveBeenCalledExactlyOnceWith('Serving http://*:80/public-authorization for production.', 'info')
-		expect(info).toHaveBeenCalledExactlyOnceWith('Serving http://*:80/public-authorization for production.')
-	})
+  it('also mirrors the banner to Sentry in production, naming every interface with *, never a host', () => {
+    logListening({ NODE_ENV: 'production', PORT: '80' })
+    // The banner never names a host: the server binds every interface (see start()), so `*`
+    // stands in for the address. The expected string is a hardcoded literal, not built from
+    // the imported ENDPOINT/PORT, so a mutant that corrupts either still fails this match.
+    expect(captureMessage).toHaveBeenCalledExactlyOnceWith('Serving http://*:80/public-authorization for production.', 'info')
+    expect(info).toHaveBeenCalledExactlyOnceWith('Serving http://*:80/public-authorization for production.')
+  })
 })
 
 describe('gracefulShutdown', () => {
-	beforeEach(() => {
-		captureMessage.mockReset()
-		disconnectAllDatabases.mockReset()
-	})
+  beforeEach(() => {
+    captureMessage.mockReset()
+    disconnectAllDatabases.mockReset()
+  })
 
-	it('drains Apollo, closes the server and disconnects with code 0', async () => {
-		const apolloServer = { stop: vi.fn().mockResolvedValue(undefined) }
-		const httpServer = { close: vi.fn((cb: () => void) => cb()) }
+  it('drains Apollo, closes the server and disconnects with code 0', async () => {
+    const apolloServer = { stop: vi.fn().mockResolvedValue(undefined) }
+    const httpServer = { close: vi.fn((cb: () => void) => cb()) }
 
-		await gracefulShutdown('SIGTERM', apolloServer as never, httpServer as never)
+    await gracefulShutdown('SIGTERM', apolloServer as never, httpServer as never)
 
-		expect(captureMessage).toHaveBeenCalledWith('SIGTERM received, shutting down gracefully...')
-		expect(apolloServer.stop).toHaveBeenCalledTimes(1)
-		expect(disconnectAllDatabases).toHaveBeenCalledWith(0)
-	})
+    expect(captureMessage).toHaveBeenCalledWith('SIGTERM received, shutting down gracefully...')
+    expect(apolloServer.stop).toHaveBeenCalledTimes(1)
+    expect(disconnectAllDatabases).toHaveBeenCalledWith(0)
+  })
 })
 
 describe('process handlers', () => {
-	let exit: ReturnType<typeof vi.spyOn>
+  let exit: ReturnType<typeof vi.spyOn>
 
-	beforeEach(() => {
-		captureException.mockReset()
-		flush.mockReset().mockResolvedValue(true)
-		exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
-	})
-	afterEach(() => exit.mockRestore())
+  beforeEach(() => {
+    captureException.mockReset()
+    flush.mockReset().mockResolvedValue(true)
+    exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+  })
+  afterEach(() => exit.mockRestore())
 
-	// ⚠️ Both handlers are synchronous (Node calls them as plain listeners and never awaits them), so
-	// the fix cannot `await` the flush — it has to happen before `exit` all the same, or a crash event
-	// is queued and then thrown away by the very `process.exit()` a moment later. Asserting `exit` has
-	// NOT been called synchronously, right after the call, is what a version that flushed AFTER exit —
-	// or never flushed at all — would fail: both would make `exit` observable immediately.
-	it('onUnhandledRejection reports the reason, flushes Sentry before exiting 1', async () => {
-		const reason = new Error('boom')
+  // ⚠️ Both handlers are synchronous (Node calls them as plain listeners and never awaits them), so
+  // the fix cannot `await` the flush — it has to happen before `exit` all the same, or a crash event
+  // is queued and then thrown away by the very `process.exit()` a moment later. Asserting `exit` has
+  // NOT been called synchronously, right after the call, is what a version that flushed AFTER exit —
+  // or never flushed at all — would fail: both would make `exit` observable immediately.
+  it('onUnhandledRejection reports the reason, flushes Sentry before exiting 1', async () => {
+    const reason = new Error('boom')
 
-		onUnhandledRejection(reason)
+    onUnhandledRejection(reason)
 
-		expect(captureException).toHaveBeenCalledWith(reason)
-		expect(flush).toHaveBeenCalledExactlyOnceWith(2000)
-		expect(exit).not.toHaveBeenCalled()
+    expect(captureException).toHaveBeenCalledWith(reason)
+    expect(flush).toHaveBeenCalledExactlyOnceWith(2000)
+    expect(exit).not.toHaveBeenCalled()
 
-		await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
-	})
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
+  })
 
-	it('onUncaughtException reports the error, flushes Sentry before exiting 1', async () => {
-		const error = new Error('kaboom')
+  it('onUncaughtException reports the error, flushes Sentry before exiting 1', async () => {
+    const error = new Error('kaboom')
 
-		onUncaughtException(error)
+    onUncaughtException(error)
 
-		expect(captureException).toHaveBeenCalledWith(error)
-		expect(flush).toHaveBeenCalledExactlyOnceWith(2000)
-		expect(exit).not.toHaveBeenCalled()
+    expect(captureException).toHaveBeenCalledWith(error)
+    expect(flush).toHaveBeenCalledExactlyOnceWith(2000)
+    expect(exit).not.toHaveBeenCalled()
 
-		await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
-	})
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
+  })
 
-	// The flush budget is 2 seconds precisely so a stalled or unreachable Sentry ingest endpoint
-	// cannot hang the process past it — this pins the timeout value itself, not just that some
-	// number was passed. Both handlers get their own case: each has its own `.catch(() => undefined)`,
-	// textually identical but a distinct function for coverage purposes.
-	it('still exits 1 if the flush itself rejects, rather than hanging the process (onUnhandledRejection)', async () => {
-		flush.mockRejectedValueOnce(new Error('sentry transport down'))
+  // The flush budget is 2 seconds precisely so a stalled or unreachable Sentry ingest endpoint
+  // cannot hang the process past it — this pins the timeout value itself, not just that some
+  // number was passed. Both handlers get their own case: each has its own `.catch(() => undefined)`,
+  // textually identical but a distinct function for coverage purposes.
+  it('still exits 1 if the flush itself rejects, rather than hanging the process (onUnhandledRejection)', async () => {
+    flush.mockRejectedValueOnce(new Error('sentry transport down'))
 
-		onUnhandledRejection(new Error('boom'))
+    onUnhandledRejection(new Error('boom'))
 
-		await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
-	})
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
+  })
 
-	it('still exits 1 if the flush itself rejects, rather than hanging the process (onUncaughtException)', async () => {
-		flush.mockRejectedValueOnce(new Error('sentry transport down'))
+  it('still exits 1 if the flush itself rejects, rather than hanging the process (onUncaughtException)', async () => {
+    flush.mockRejectedValueOnce(new Error('sentry transport down'))
 
-		onUncaughtException(new Error('kaboom'))
+    onUncaughtException(new Error('kaboom'))
 
-		await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
-	})
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1))
+  })
 })
 
 /*
@@ -523,284 +523,284 @@ describe('process handlers', () => {
  * at file level and run for the suites above that mock none of this.
  */
 const resetStartMocks = () => {
-	captureException.mockReset()
-	RedisConnect.mockReset().mockResolvedValue(undefined)
-	MongoDBConnect.mockReset().mockResolvedValue(undefined)
-	setupFieldEncryption.mockReset().mockResolvedValue(undefined)
-	assertHashFieldTTLSupport.mockReset().mockResolvedValue(undefined)
-	loadKeygrip.mockReset().mockResolvedValue({ version: 1, fp: 'c77808de4139', keys: KEYS })
-	watchKeygrip.mockReset().mockResolvedValue(undefined)
-	subscriber.connect.mockReset().mockResolvedValue(undefined)
-	redisClient.duplicate.mockClear()
-	// ⚠️ `REDIS_URL` is stubbed on top of the list because it is not in it: the guard requires it only
-	// when `REDIS_IS_CLUSTER` is not `'1'`, and `validEnv()`'s `'0'` is that branch.
-	for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
-	vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
+  captureException.mockReset()
+  RedisConnect.mockReset().mockResolvedValue(undefined)
+  MongoDBConnect.mockReset().mockResolvedValue(undefined)
+  setupFieldEncryption.mockReset().mockResolvedValue(undefined)
+  assertHashFieldTTLSupport.mockReset().mockResolvedValue(undefined)
+  loadKeygrip.mockReset().mockResolvedValue({ version: 1, fp: 'c77808de4139', keys: KEYS })
+  watchKeygrip.mockReset().mockResolvedValue(undefined)
+  subscriber.connect.mockReset().mockResolvedValue(undefined)
+  redisClient.duplicate.mockClear()
+  // ⚠️ `REDIS_URL` is stubbed on top of the list because it is not in it: the guard requires it only
+  // when `REDIS_IS_CLUSTER` is not `'1'`, and `validEnv()`'s `'0'` is that branch.
+  for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
+  vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
 }
 
 describe('start (failure path)', () => {
-	let errorLog: ReturnType<typeof vi.spyOn>
+  let errorLog: ReturnType<typeof vi.spyOn>
 
-	beforeEach(() => {
-		resetStartMocks()
-		disconnectAllDatabases.mockReset()
-		errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-	})
-	afterEach(() => {
-		errorLog.mockRestore()
-		vi.unstubAllEnvs()
-	})
+  beforeEach(() => {
+    resetStartMocks()
+    disconnectAllDatabases.mockReset()
+    errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+  afterEach(() => {
+    errorLog.mockRestore()
+    vi.unstubAllEnvs()
+  })
 
-	it('reports to Sentry and disconnects with code 1 when MongoDB fails to connect', async () => {
-		const error = new Error('mongo boom')
-		MongoDBConnect.mockRejectedValueOnce(error)
+  it('reports to Sentry and disconnects with code 1 when MongoDB fails to connect', async () => {
+    const error = new Error('mongo boom')
+    MongoDBConnect.mockRejectedValueOnce(error)
 
-		await start()
+    await start()
 
-		expect(MongoDBConnect).toHaveBeenCalledTimes(1)
-		expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
-		expect(captureException).toHaveBeenCalledWith(error)
-		expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
-	})
+    expect(MongoDBConnect).toHaveBeenCalledTimes(1)
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
+    expect(captureException).toHaveBeenCalledWith(error)
+    expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
+  })
 
-	// Both datasources are opened by the same Promise.all, so Redis's rejection has to be covered
-	// separately — MongoDB resolving is not enough to prove the catch handles either side.
-	it('reports to Sentry and disconnects with code 1 when Redis fails to connect', async () => {
-		const error = new Error('redis boom')
-		RedisConnect.mockRejectedValueOnce(error)
+  // Both datasources are opened by the same Promise.all, so Redis's rejection has to be covered
+  // separately — MongoDB resolving is not enough to prove the catch handles either side.
+  it('reports to Sentry and disconnects with code 1 when Redis fails to connect', async () => {
+    const error = new Error('redis boom')
+    RedisConnect.mockRejectedValueOnce(error)
 
-		await start()
+    await start()
 
-		expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
-		expect(captureException).toHaveBeenCalledWith(error)
-		expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
-	})
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
+    expect(captureException).toHaveBeenCalledWith(error)
+    expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
+  })
 
-	/*
-	 * ⚠️ The refusal this whole design exists for. A service that could not unwrap the record and started
-	 * anyway would sign cookies with keys no sibling can verify, and the symptom — some requests
-	 * authenticate and some do not, depending on which service the edge picked — is one this platform has
-	 * already paid for twice. Fatal, on the same path as a datasource failure.
-	 */
-	it('reports to Sentry and disconnects with code 1 when the keygrip record cannot be read', async () => {
-		const error = new Error('KEYGRIP_KEK_MISMATCH: this service cannot unwrap keygrip record version 3 (c77808de4139).')
-		loadKeygrip.mockRejectedValueOnce(error)
+  /*
+   * ⚠️ The refusal this whole design exists for. A service that could not unwrap the record and started
+   * anyway would sign cookies with keys no sibling can verify, and the symptom — some requests
+   * authenticate and some do not, depending on which service the edge picked — is one this platform has
+   * already paid for twice. Fatal, on the same path as a datasource failure.
+   */
+  it('reports to Sentry and disconnects with code 1 when the keygrip record cannot be read', async () => {
+    const error = new Error('KEYGRIP_KEK_MISMATCH: this service cannot unwrap keygrip record version 3 (c77808de4139).')
+    loadKeygrip.mockRejectedValueOnce(error)
 
-		await start()
+    await start()
 
-		expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
-		expect(captureException).toHaveBeenCalledWith(error)
-		expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
-	})
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
+    expect(captureException).toHaveBeenCalledWith(error)
+    expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
+  })
 
-	/*
-	 * ⚠️ Booting deaf is not an option either. A process that could read the record once but cannot hold a
-	 * subscription would keep signing with the key it started with, through every rotation, for as long as
-	 * it runs — the exact drift the record replaced five environment files to prevent, only slower to
-	 * notice. Fatal, and fatal *before* listen(), so no cookie is ever signed by a deaf process.
-	 */
-	it('reports to Sentry and disconnects with code 1 when the subscriber connection cannot be opened', async () => {
-		const error = new Error('subscriber boom')
-		subscriber.connect.mockRejectedValueOnce(error)
+  /*
+   * ⚠️ Booting deaf is not an option either. A process that could read the record once but cannot hold a
+   * subscription would keep signing with the key it started with, through every rotation, for as long as
+   * it runs — the exact drift the record replaced five environment files to prevent, only slower to
+   * notice. Fatal, and fatal *before* listen(), so no cookie is ever signed by a deaf process.
+   */
+  it('reports to Sentry and disconnects with code 1 when the subscriber connection cannot be opened', async () => {
+    const error = new Error('subscriber boom')
+    subscriber.connect.mockRejectedValueOnce(error)
 
-		await start()
+    await start()
 
-		expect(watchKeygrip).not.toHaveBeenCalled()
-		expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
-		expect(captureException).toHaveBeenCalledWith(error)
-		expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
-	})
+    expect(watchKeygrip).not.toHaveBeenCalled()
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
+    expect(captureException).toHaveBeenCalledWith(error)
+    expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
+  })
 
-	/*
-	 * ⚠️ **A Redis without hash-field TTLs is a Redis this service cannot log anybody into**.
-	 * Every login it serves files the session under its account and arms an `HEXPIRE` on that field, and
-	 * Redis answers an unknown command at first use rather than at startup — so without this refusal the
-	 * process comes up green, serves reads all morning, and fails the first login inside a rollback.
-	 */
-	it('reports to Sentry and disconnects with code 1 when the server has no hash-field TTLs', async () => {
-		const error = new Error(
-			'Redis is older than 7.4.0: hash-field TTLs (HEXPIRE/HTTL) are missing, and the session index cannot prune itself without them. See marketplace-docker-DBs/README.md §Redis.'
-		)
-		assertHashFieldTTLSupport.mockRejectedValueOnce(error)
+  /*
+   * ⚠️ **A Redis without hash-field TTLs is a Redis this service cannot log anybody into**.
+   * Every login it serves files the session under its account and arms an `HEXPIRE` on that field, and
+   * Redis answers an unknown command at first use rather than at startup — so without this refusal the
+   * process comes up green, serves reads all morning, and fails the first login inside a rollback.
+   */
+  it('reports to Sentry and disconnects with code 1 when the server has no hash-field TTLs', async () => {
+    const error = new Error(
+      'Redis is older than 7.4.0: hash-field TTLs (HEXPIRE/HTTL) are missing, and the session index cannot prune itself without them. See marketplace-docker-DBs/README.md §Redis.'
+    )
+    assertHashFieldTTLSupport.mockRejectedValueOnce(error)
 
-		await start()
+    await start()
 
-		// Refused before the keys are even read: nothing else touches the connection first, so the log
-		// carries the version problem and not whatever the next step made of it.
-		expect(loadKeygrip).not.toHaveBeenCalled()
-		expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
-		expect(captureException).toHaveBeenCalledWith(error)
-		expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
-	})
+    // Refused before the keys are even read: nothing else touches the connection first, so the log
+    // carries the version problem and not whatever the next step made of it.
+    expect(loadKeygrip).not.toHaveBeenCalled()
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
+    expect(captureException).toHaveBeenCalledWith(error)
+    expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
+  })
 
-	// A service that came up with field encryption broken would answer queries with ciphertext and
-	// write plaintext beside it, so this failure has to be as fatal as a datasource failure.
-	it('reports to Sentry and disconnects with code 1 when field encryption cannot start', async () => {
-		const error = new Error('CSFLE_MASTER_KEY_PATH is not set — field encryption cannot start without it')
-		setupFieldEncryption.mockRejectedValueOnce(error)
+  // A service that came up with field encryption broken would answer queries with ciphertext and
+  // write plaintext beside it, so this failure has to be as fatal as a datasource failure.
+  it('reports to Sentry and disconnects with code 1 when field encryption cannot start', async () => {
+    const error = new Error('CSFLE_MASTER_KEY_PATH is not set — field encryption cannot start without it')
+    setupFieldEncryption.mockRejectedValueOnce(error)
 
-		await start()
+    await start()
 
-		expect(setupFieldEncryption).toHaveBeenCalledTimes(1)
-		expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
-		expect(captureException).toHaveBeenCalledWith(error)
-		expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
-	})
+    expect(setupFieldEncryption).toHaveBeenCalledTimes(1)
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith('error', error)
+    expect(captureException).toHaveBeenCalledWith(error)
+    expect(disconnectAllDatabases).toHaveBeenCalledWith(1)
+  })
 })
 
 describe('start (success path)', () => {
-	let listenSpy: ReturnType<typeof vi.spyOn>
+  let listenSpy: ReturnType<typeof vi.spyOn>
 
-	beforeEach(() => {
-		resetStartMocks()
-		disconnectAllDatabases.mockClear()
-		// listen() itself is stubbed out below, so PORT can stay the same placeholder as every
-		// other required var — no socket is ever really opened by this test.
-		listenSpy = vi.spyOn(http.Server.prototype, 'listen').mockImplementation(function (this: http.Server, ...args: unknown[]) {
-			const callback = args.find((arg): arg is () => void => typeof arg === 'function')
-			callback?.()
+  beforeEach(() => {
+    resetStartMocks()
+    disconnectAllDatabases.mockClear()
+    // listen() itself is stubbed out below, so PORT can stay the same placeholder as every
+    // other required var — no socket is ever really opened by this test.
+    listenSpy = vi.spyOn(http.Server.prototype, 'listen').mockImplementation(function (this: http.Server, ...args: unknown[]) {
+      const callback = args.find((arg): arg is () => void => typeof arg === 'function')
+      callback?.()
 
-			return this
-		})
-	})
-	afterEach(() => {
-		listenSpy.mockRestore()
-		vi.unstubAllEnvs()
-	})
+      return this
+    })
+  })
+  afterEach(() => {
+    listenSpy.mockRestore()
+    vi.unstubAllEnvs()
+  })
 
-	it('passes only { port }, never a host, to listen — binding every interface on purpose', async () => {
-		const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  it('passes only { port }, never a host, to listen — binding every interface on purpose', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 
-		const server = await start()
+    const server = await start()
 
-		// The whole point of the fix this asserts: no `host`/`hostname` key travels into listen()
-		// at all. Node silently ignores an unrecognised option, so a regression here would not
-		// throw — this exact-shape check is the only thing that would catch it.
-		expect(listenSpy).toHaveBeenCalledExactlyOnceWith({ port: process.env.PORT }, expect.any(Function))
-		// Once, with no arguments: it reads its configuration from the environment, and a caller that
-		// passed it anything would be building a second source of truth for the master key path.
-		expect(setupFieldEncryption).toHaveBeenCalledExactlyOnceWith()
+    // The whole point of the fix this asserts: no `host`/`hostname` key travels into listen()
+    // at all. Node silently ignores an unrecognised option, so a regression here would not
+    // throw — this exact-shape check is the only thing that would catch it.
+    expect(listenSpy).toHaveBeenCalledExactlyOnceWith({ port: process.env.PORT }, expect.any(Function))
+    // Once, with no arguments: it reads its configuration from the environment, and a caller that
+    // passed it anything would be building a second source of truth for the master key path.
+    expect(setupFieldEncryption).toHaveBeenCalledExactlyOnceWith()
 
-		await server?.apolloServer.stop()
-		info.mockRestore()
-	})
+    await server?.apolloServer.stop()
+    info.mockRestore()
+  })
 
-	/*
-	 * ⚠️ Two things at once, and both are ordering. The keys are read with THIS service's own name — the
-	 * holders table is worthless if five services write the same label — and they are read BEFORE field
-	 * encryption, because the connect that answers them is the one that just resolved and because a boot
-	 * that is going to be refused should be refused before it opens a ClientEncryption.
-	 */
-	it('reads the signing keys under its own name, right after the connect and before field encryption', async () => {
-		const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  /*
+   * ⚠️ Two things at once, and both are ordering. The keys are read with THIS service's own name — the
+   * holders table is worthless if five services write the same label — and they are read BEFORE field
+   * encryption, because the connect that answers them is the one that just resolved and because a boot
+   * that is going to be refused should be refused before it opens a ClientEncryption.
+   */
+  it('reads the signing keys under its own name, right after the connect and before field encryption', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 
-		const server = await start()
+    const server = await start()
 
-		expect(loadKeygrip).toHaveBeenCalledExactlyOnceWith(redisClient, SERVICE_NAME)
-		expect(loadKeygrip.mock.invocationCallOrder[0]).toBeLessThan(setupFieldEncryption.mock.invocationCallOrder[0])
+    expect(loadKeygrip).toHaveBeenCalledExactlyOnceWith(redisClient, SERVICE_NAME)
+    expect(loadKeygrip.mock.invocationCallOrder[0]).toBeLessThan(setupFieldEncryption.mock.invocationCallOrder[0])
 
-		await server?.apolloServer.stop()
-		info.mockRestore()
-	})
+    await server?.apolloServer.stop()
+    info.mockRestore()
+  })
 
-	/*
-	 * ⚠️ The version probe goes on the SHARED client and goes FIRST. The shared client because it
-	 * is the connection every login will actually write through, and a probe of some other connection
-	 * answers for some other server; first because a boot that is going to be refused should be refused
-	 * before it unwraps a key record or opens a ClientEncryption.
-	 */
-	it('probes the server for hash-field TTLs on the shared client, before anything else uses it', async () => {
-		const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  /*
+   * ⚠️ The version probe goes on the SHARED client and goes FIRST. The shared client because it
+   * is the connection every login will actually write through, and a probe of some other connection
+   * answers for some other server; first because a boot that is going to be refused should be refused
+   * before it unwraps a key record or opens a ClientEncryption.
+   */
+  it('probes the server for hash-field TTLs on the shared client, before anything else uses it', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 
-		const server = await start()
+    const server = await start()
 
-		expect(assertHashFieldTTLSupport).toHaveBeenCalledExactlyOnceWith(redisClient)
-		expect(assertHashFieldTTLSupport.mock.invocationCallOrder[0]).toBeLessThan(loadKeygrip.mock.invocationCallOrder[0])
+    expect(assertHashFieldTTLSupport).toHaveBeenCalledExactlyOnceWith(redisClient)
+    expect(assertHashFieldTTLSupport.mock.invocationCallOrder[0]).toBeLessThan(loadKeygrip.mock.invocationCallOrder[0])
 
-		await server?.apolloServer.stop()
-		info.mockRestore()
-	})
+    await server?.apolloServer.stop()
+    info.mockRestore()
+  })
 
-	/*
-	 * ⚠️ Armed on a connection of its own, with the version the boot read, before the socket opens. Each
-	 * of those three is a way this can be wired wrongly and still look right: the shared client would
-	 * break every session read the moment a message arrives, a hard-coded starting version would make the
-	 * first rotation invisible or replay one that already landed, and arming it after `listen()` leaves a
-	 * window where this process signs cookies it will never learn to stop signing.
-	 */
-	it('watches the record on a duplicated connection, from the version it booted with, before it listens', async () => {
-		const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  /*
+   * ⚠️ Armed on a connection of its own, with the version the boot read, before the socket opens. Each
+   * of those three is a way this can be wired wrongly and still look right: the shared client would
+   * break every session read the moment a message arrives, a hard-coded starting version would make the
+   * first rotation invisible or replay one that already landed, and arming it after `listen()` leaves a
+   * window where this process signs cookies it will never learn to stop signing.
+   */
+  it('watches the record on a duplicated connection, from the version it booted with, before it listens', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 
-		const server = await start()
+    const server = await start()
 
-		expect(redisClient.duplicate).toHaveBeenCalledExactlyOnceWith()
-		expect(subscriber.connect).toHaveBeenCalledExactlyOnceWith()
-		expect(watchKeygrip).toHaveBeenCalledExactlyOnceWith({
-			store: redisClient,
-			subscriber,
-			serviceName: SERVICE_NAME,
-			version: 1,
-			fp: 'c77808de4139',
-			onKeys: expect.any(Function),
-			onError: expect.any(Function)
-		})
-		expect(watchKeygrip.mock.invocationCallOrder[0]).toBeLessThan(listenSpy.mock.invocationCallOrder[0])
+    expect(redisClient.duplicate).toHaveBeenCalledExactlyOnceWith()
+    expect(subscriber.connect).toHaveBeenCalledExactlyOnceWith()
+    expect(watchKeygrip).toHaveBeenCalledExactlyOnceWith({
+      store: redisClient,
+      subscriber,
+      serviceName: SERVICE_NAME,
+      version: 1,
+      fp: 'c77808de4139',
+      onKeys: expect.any(Function),
+      onError: expect.any(Function)
+    })
+    expect(watchKeygrip.mock.invocationCallOrder[0]).toBeLessThan(listenSpy.mock.invocationCallOrder[0])
 
-		await server?.apolloServer.stop()
-		info.mockRestore()
-	})
+    await server?.apolloServer.stop()
+    info.mockRestore()
+  })
 
-	/*
-	 * The rotation, as this process experiences it: no restart, no reconnect, a new array in `app.keys`.
-	 * Asserted through a signature because `Keygrip` keeps its keys private — and a signature is also what
-	 * proves the *material* reached it in the right order, rather than the ids or the whole objects.
-	 */
-	it('rebuilds the signing keys in place when the watch reports a new record', async () => {
-		const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  /*
+   * The rotation, as this process experiences it: no restart, no reconnect, a new array in `app.keys`.
+   * Asserted through a signature because `Keygrip` keeps its keys private — and a signature is also what
+   * proves the *material* reached it in the right order, rather than the ids or the whole objects.
+   */
+  it('rebuilds the signing keys in place when the watch reports a new record', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 
-		const server = await start()
-		const { onKeys } = watchKeygrip.mock.calls[0][0] as {
-			onKeys: (record: { version: number; fp: string; keys: typeof KEYS }) => void
-		}
+    const server = await start()
+    const { onKeys } = watchKeygrip.mock.calls[0][0] as {
+      onKeys: (record: { version: number; fp: string; keys: typeof KEYS }) => void
+    }
 
-		// `app.keys` is typed `Keygrip | string[]` by Koa; this service only ever assigns the first.
-		const signing = () => server?.app.keys as Keygrip
+    // `app.keys` is typed `Keygrip | string[]` by Koa; this service only ever assigns the first.
+    const signing = () => server?.app.keys as Keygrip
 
-		expect(signing().sign('session-cookie')).toBe(new Keygrip([KEYS[0].material], 'sha512').sign('session-cookie'))
+    expect(signing().sign('session-cookie')).toBe(new Keygrip([KEYS[0].material], 'sha512').sign('session-cookie'))
 
-		onKeys({ version: 2, fp: '0b1d9f2c4a77', keys: ROTATED_KEYS })
+    onKeys({ version: 2, fp: '0b1d9f2c4a77', keys: ROTATED_KEYS })
 
-		// Signs with the key that did not exist a line ago...
-		expect(signing().sign('session-cookie')).toBe(new Keygrip([ROTATED_KEYS[0].material], 'sha512').sign('session-cookie'))
-		// ...and still verifies the one it was signing with, which is what keeps every issued cookie valid
-		// across the rotation instead of logging the whole platform out.
-		expect(signing().index('session-cookie', new Keygrip([KEYS[0].material], 'sha512').sign('session-cookie'))).toBe(1)
+    // Signs with the key that did not exist a line ago...
+    expect(signing().sign('session-cookie')).toBe(new Keygrip([ROTATED_KEYS[0].material], 'sha512').sign('session-cookie'))
+    // ...and still verifies the one it was signing with, which is what keeps every issued cookie valid
+    // across the rotation instead of logging the whole platform out.
+    expect(signing().index('session-cookie', new Keygrip([KEYS[0].material], 'sha512').sign('session-cookie'))).toBe(1)
 
-		await server?.apolloServer.stop()
-		info.mockRestore()
-	})
+    await server?.apolloServer.stop()
+    info.mockRestore()
+  })
 
-	/*
-	 * ⚠️ Reported and dropped, never thrown. `onError` runs on a socket callback and on a timer, where a
-	 * throw is an unhandled rejection that kills a process which is serving perfectly well on keys every
-	 * sibling still verifies. Losing the ability to re-read is a Sentry event, not an outage.
-	 */
-	it('reports a failed re-read to Sentry without taking the service down', async () => {
-		const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  /*
+   * ⚠️ Reported and dropped, never thrown. `onError` runs on a socket callback and on a timer, where a
+   * throw is an unhandled rejection that kills a process which is serving perfectly well on keys every
+   * sibling still verifies. Losing the ability to re-read is a Sentry event, not an outage.
+   */
+  it('reports a failed re-read to Sentry without taking the service down', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
 
-		const server = await start()
-		const { onError } = watchKeygrip.mock.calls[0][0] as { onError: (error: unknown) => void }
-		const error = new Error('KEYGRIP_KEK_MISMATCH: this service cannot unwrap keygrip record version 4 (0b1d9f2c4a77).')
+    const server = await start()
+    const { onError } = watchKeygrip.mock.calls[0][0] as { onError: (error: unknown) => void }
+    const error = new Error('KEYGRIP_KEK_MISMATCH: this service cannot unwrap keygrip record version 4 (0b1d9f2c4a77).')
 
-		captureException.mockClear()
-		expect(() => onError(error)).not.toThrow()
+    captureException.mockClear()
+    expect(() => onError(error)).not.toThrow()
 
-		expect(captureException).toHaveBeenCalledExactlyOnceWith(error)
-		expect(disconnectAllDatabases).not.toHaveBeenCalled()
+    expect(captureException).toHaveBeenCalledExactlyOnceWith(error)
+    expect(disconnectAllDatabases).not.toHaveBeenCalled()
 
-		await server?.apolloServer.stop()
-		info.mockRestore()
-	})
+    await server?.apolloServer.stop()
+    info.mockRestore()
+  })
 })
 
 /*
@@ -813,39 +813,39 @@ describe('start (success path)', () => {
  * reports as Survived rather than NoCoverage.
  */
 describe('createServer', () => {
-	beforeEach(() => {
-		bodyParserOptions.length = 0
-		apolloServerOptions.length = 0
-	})
+  beforeEach(() => {
+    bodyParserOptions.length = 0
+    apolloServerOptions.length = 0
+  })
 
-	it('parses json/form/text bodies and hardens Apollo with the drain plugin and csrfPrevention', async () => {
-		for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
-		vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
+  it('parses json/form/text bodies and hardens Apollo with the drain plugin and csrfPrevention', async () => {
+    for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
+    vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
 
-		const { apolloServer } = await createServer(KEYS)
+    const { apolloServer } = await createServer(KEYS)
 
-		try {
-			// The whole options object, not a subset: `bodyParserKoa({})` (every key dropped),
-			// an emptied `enableTypes`/`extendTypes.json` array, or any one of the three type
-			// strings blanked all still reach koa-bodyparser and all still fail this exact match.
-			expect(bodyParserOptions).toEqual([
-				{
-					enableTypes: ['json', 'form', 'text'],
-					// Multipart requests are deliberately excluded here — graphqlUploadKoa handles
-					// those — so only 'application/json' extends the json type, nothing else.
-					extendTypes: { json: ['application/json'] }
-				}
-			])
+    try {
+      // The whole options object, not a subset: `bodyParserKoa({})` (every key dropped),
+      // an emptied `enableTypes`/`extendTypes.json` array, or any one of the three type
+      // strings blanked all still reach koa-bodyparser and all still fail this exact match.
+      expect(bodyParserOptions).toEqual([
+        {
+          enableTypes: ['json', 'form', 'text'],
+          // Multipart requests are deliberately excluded here — graphqlUploadKoa handles
+          // those — so only 'application/json' extends the json type, nothing else.
+          extendTypes: { json: ['application/json'] }
+        }
+      ])
 
-			// pluginCount asserts the drain plugin is still wired (an emptied `plugins` array
-			// would leave the httpServer undrained on shutdown); csrfPrevention: true is what
-			// keeps this endpoint refusing a simple, credentialed cross-site POST.
-			expect(apolloServerOptions).toEqual([{ pluginCount: 1, csrfPrevention: true }])
-		} finally {
-			await apolloServer.stop()
-			vi.unstubAllEnvs()
-		}
-	})
+      // pluginCount asserts the drain plugin is still wired (an emptied `plugins` array
+      // would leave the httpServer undrained on shutdown); csrfPrevention: true is what
+      // keeps this endpoint refusing a simple, credentialed cross-site POST.
+      expect(apolloServerOptions).toEqual([{ pluginCount: 1, csrfPrevention: true }])
+    } finally {
+      await apolloServer.stop()
+      vi.unstubAllEnvs()
+    }
+  })
 })
 
 /*
@@ -858,110 +858,110 @@ describe('createServer', () => {
  * `mutate` in stryker.config.mjs instead of tested.
  */
 describe('createServer (real Koa/Apollo assembly, driven over a real socket)', () => {
-	let app: Awaited<ReturnType<typeof createServer>>['app']
-	let httpServer: Awaited<ReturnType<typeof createServer>>['httpServer']
-	let apolloServer: Awaited<ReturnType<typeof createServer>>['apolloServer']
-	let base: string
+  let app: Awaited<ReturnType<typeof createServer>>['app']
+  let httpServer: Awaited<ReturnType<typeof createServer>>['httpServer']
+  let apolloServer: Awaited<ReturnType<typeof createServer>>['apolloServer']
+  let base: string
 
-	beforeEach(async () => {
-		koaMiddlewareOptions.length = 0
-		for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
-		vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
+  beforeEach(async () => {
+    koaMiddlewareOptions.length = 0
+    for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
+    vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
 
-		const server = await createServer(KEYS)
-		app = server.app
-		httpServer = server.httpServer
-		apolloServer = server.apolloServer
+    const server = await createServer(KEYS)
+    app = server.app
+    httpServer = server.httpServer
+    apolloServer = server.apolloServer
 
-		await new Promise<void>((resolve) => httpServer.listen(0, resolve))
-		base = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`
-	})
+    await new Promise<void>((resolve) => httpServer.listen(0, resolve))
+    base = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`
+  })
 
-	afterEach(async () => {
-		await apolloServer.stop()
-		await new Promise<void>((resolve) => httpServer.close(() => resolve()))
-		vi.unstubAllEnvs()
-	})
+  afterEach(async () => {
+    await apolloServer.stop()
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()))
+    vi.unstubAllEnvs()
+  })
 
-	// The public tier answers an anonymous caller: no bearer, no cookie, no authorization middleware
-	// — that is the whole point of the tier, and this is what proves the schema is reachable without
-	// a credential rather than merely assembled.
-	it('serves the assembled public schema at ENDPOINT, to a caller carrying no credential', async () => {
-		const res = await fetch(`${base}${ENDPOINT}`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ query: '{ __schema { queryType { name } mutationType { name } } }' })
-		})
-		const json = (await res.json()) as {
-			data?: { __schema: { queryType: { name: string }; mutationType: { name: string } } }
-		}
+  // The public tier answers an anonymous caller: no bearer, no cookie, no authorization middleware
+  // — that is the whole point of the tier, and this is what proves the schema is reachable without
+  // a credential rather than merely assembled.
+  it('serves the assembled public schema at ENDPOINT, to a caller carrying no credential', async () => {
+    const res = await fetch(`${base}${ENDPOINT}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ __schema { queryType { name } mutationType { name } } }' })
+    })
+    const json = (await res.json()) as {
+      data?: { __schema: { queryType: { name: string }; mutationType: { name: string } } }
+    }
 
-		expect(res.status).toBe(200)
-		expect(json.data?.__schema).toEqual({ queryType: { name: 'QueriesPublic' }, mutationType: { name: 'MutationsPublic' } })
-	})
+    expect(res.status).toBe(200)
+    expect(json.data?.__schema).toEqual({ queryType: { name: 'QueriesPublic' }, mutationType: { name: 'MutationsPublic' } })
+  })
 
-	/*
-	 * ⚠️ The raw Koa `ctx`, not the integration's own empty default — and read off the options object
-	 * rather than out of a resolver, because nothing in the public schema can tell the two apart:
-	 * `authPublicHello` takes no arguments, and the three login mutations that DO read the context
-	 * reach Mongo and Redis before they touch it. What the options object shows is exactly what is at
-	 * stake: `setLoginCookies(ctx, refreshToken)` writes the refresh cookie through this value, so a
-	 * `context()` returning `undefined` — or an options literal emptied to `{}`, which makes the
-	 * integration supply its own `{}` instead — is a login that cannot set a cookie.
-	 */
-	it('hands the Koa ctx of the request itself to Apollo as the resolver context', async () => {
-		const res = await fetch(`${base}${ENDPOINT}`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ query: '{ authPublicHello { txt } }' })
-		})
-		await res.json()
+  /*
+   * ⚠️ The raw Koa `ctx`, not the integration's own empty default — and read off the options object
+   * rather than out of a resolver, because nothing in the public schema can tell the two apart:
+   * `authPublicHello` takes no arguments, and the three login mutations that DO read the context
+   * reach Mongo and Redis before they touch it. What the options object shows is exactly what is at
+   * stake: `setLoginCookies(ctx, refreshToken)` writes the refresh cookie through this value, so a
+   * `context()` returning `undefined` — or an options literal emptied to `{}`, which makes the
+   * integration supply its own `{}` instead — is a login that cannot set a cookie.
+   */
+  it('hands the Koa ctx of the request itself to Apollo as the resolver context', async () => {
+    const res = await fetch(`${base}${ENDPOINT}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ authPublicHello { txt } }' })
+    })
+    await res.json()
 
-		expect(koaMiddlewareOptions).toHaveLength(1)
-		const context = koaMiddlewareOptions[0]?.context
-		expect(context).toBeTypeOf('function')
+    expect(koaMiddlewareOptions).toHaveLength(1)
+    const context = koaMiddlewareOptions[0]?.context
+    expect(context).toBeTypeOf('function')
 
-		const ctx = (await context?.()) as Context
-		expect(ctx.path).toBe(ENDPOINT)
-		expect(ctx.app).toBe(app)
-	})
+    const ctx = (await context?.()) as Context
+    expect(ctx.path).toBe(ENDPOINT)
+    expect(ctx.app).toBe(app)
+  })
 
-	/*
-	 * Apollo's CSRF prevention treats `application/x-www-form-urlencoded` as suspicious unless a
-	 * non-empty `x-apollo-operation-name` (or `apollo-require-preflight`) header is present. This is
-	 * the behaviour `csrfPrevention: true` buys, asserted end to end rather than only as an option
-	 * literal: a simple, credentialed cross-site POST is what it exists to refuse.
-	 */
-	it('blocks a form-encoded POST with no preflight header as a potential CSRF attempt', async () => {
-		const res = await fetch(`${base}${ENDPOINT}`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/x-www-form-urlencoded' },
-			body: 'query=' + encodeURIComponent('{ __typename }')
-		})
-		const json = (await res.json()) as { errors?: { message: string }[] }
+  /*
+   * Apollo's CSRF prevention treats `application/x-www-form-urlencoded` as suspicious unless a
+   * non-empty `x-apollo-operation-name` (or `apollo-require-preflight`) header is present. This is
+   * the behaviour `csrfPrevention: true` buys, asserted end to end rather than only as an option
+   * literal: a simple, credentialed cross-site POST is what it exists to refuse.
+   */
+  it('blocks a form-encoded POST with no preflight header as a potential CSRF attempt', async () => {
+    const res = await fetch(`${base}${ENDPOINT}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'query=' + encodeURIComponent('{ __typename }')
+    })
+    const json = (await res.json()) as { errors?: { message: string }[] }
 
-		expect(res.status).toBe(400)
-		expect(json.errors?.[0]?.message).toContain('potential Cross-Site Request Forgery')
-	})
+    expect(res.status).toBe(400)
+    expect(json.errors?.[0]?.message).toContain('potential Cross-Site Request Forgery')
+  })
 
-	// `/health` is what the systemd unit and the monitor poll, and it answers before any credential is
-	// involved — this tier has none to check.
-	it('answers /health with the health body, unauthenticated', async () => {
-		const res = await fetch(`${base}/health`)
-		const json = (await res.json()) as { status: string; timestamp: string }
+  // `/health` is what the systemd unit and the monitor poll, and it answers before any credential is
+  // involved — this tier has none to check.
+  it('answers /health with the health body, unauthenticated', async () => {
+    const res = await fetch(`${base}/health`)
+    const json = (await res.json()) as { status: string; timestamp: string }
 
-		expect(res.status).toBe(200)
-		expect(json.status).toBe('OK')
-		expect(new Date(json.timestamp).toISOString()).toBe(json.timestamp)
-	})
+    expect(res.status).toBe(200)
+    expect(json.status).toBe('OK')
+    expect(new Date(json.timestamp).toISOString()).toBe(json.timestamp)
+  })
 
-	// Nothing is mounted after the router, so `await next()` ends in Koa's own 404 — which is the
-	// point: an unknown path must not be answered by either of the two arms above.
-	it('falls through to 404 for an unknown path', async () => {
-		const res = await fetch(`${base}/nope`)
+  // Nothing is mounted after the router, so `await next()` ends in Koa's own 404 — which is the
+  // point: an unknown path must not be answered by either of the two arms above.
+  it('falls through to 404 for an unknown path', async () => {
+    const res = await fetch(`${base}/nope`)
 
-		expect(res.status).toBe(404)
-	})
+    expect(res.status).toBe(404)
+  })
 })
 
 // ⚠️ **`app.proxy` off is load-bearing, not an unset default nobody thought about.** With it off,
@@ -972,17 +972,17 @@ describe('createServer (real Koa/Apollo assembly, driven over a real socket)', (
 // start trusting `X-Forwarded-For` and start producing real addresses everywhere `ctx.ip` is read.
 // A comment cannot prevent that; this test can, and it is the reason the setting is never assigned.
 describe('app.proxy', () => {
-	it('is off on the constructed Koa app', async () => {
-		for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
-		vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
+  it('is off on the constructed Koa app', async () => {
+    for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
+    vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
 
-		const { app, apolloServer } = await createServer(KEYS)
+    const { app, apolloServer } = await createServer(KEYS)
 
-		expect(app.proxy).toBeFalsy()
+    expect(app.proxy).toBeFalsy()
 
-		await apolloServer.stop()
-		vi.unstubAllEnvs()
-	})
+    await apolloServer.stop()
+    vi.unstubAllEnvs()
+  })
 })
 
 /*
@@ -992,26 +992,26 @@ describe('app.proxy', () => {
  * key ids or the whole objects.
  */
 describe('the signing keys', () => {
-	it('signs with the first key, verifies with the older one, and stays sha512', async () => {
-		for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
-		vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
+  it('signs with the first key, verifies with the older one, and stays sha512', async () => {
+    for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
+    vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
 
-		const { apolloServer, keys } = await createServer(KEYS)
-		const newest = new Keygrip([KEYS[0].material], 'sha512')
-		const oldest = new Keygrip([KEYS[1].material], 'sha512')
+    const { apolloServer, keys } = await createServer(KEYS)
+    const newest = new Keygrip([KEYS[0].material], 'sha512')
+    const oldest = new Keygrip([KEYS[1].material], 'sha512')
 
-		// Index 0 is the key that signs — the array order decides which, and reversing it would make
-		// this service sign with a key its siblings are only verifying with.
-		expect(keys.sign('session-cookie')).toBe(newest.sign('session-cookie'))
-		expect(keys.sign('session-cookie')).not.toBe(oldest.sign('session-cookie'))
+    // Index 0 is the key that signs — the array order decides which, and reversing it would make
+    // this service sign with a key its siblings are only verifying with.
+    expect(keys.sign('session-cookie')).toBe(newest.sign('session-cookie'))
+    expect(keys.sign('session-cookie')).not.toBe(oldest.sign('session-cookie'))
 
-		// And the older key still verifies, at its own index: this is what carries already-issued
-		// cookies across a rotation instead of logging everyone out.
-		expect(keys.index('session-cookie', oldest.sign('session-cookie'))).toBe(1)
+    // And the older key still verifies, at its own index: this is what carries already-issued
+    // cookies across a rotation instead of logging everyone out.
+    expect(keys.index('session-cookie', oldest.sign('session-cookie'))).toBe(1)
 
-		await apolloServer.stop()
-		vi.unstubAllEnvs()
-	})
+    await apolloServer.stop()
+    vi.unstubAllEnvs()
+  })
 })
 
 /*
@@ -1022,19 +1022,19 @@ describe('the signing keys', () => {
  * the pool goes on holding.
  */
 describe('start (missing environment)', () => {
-	afterEach(() => {
-		vi.unstubAllEnvs()
-	})
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
 
-	it('rejects — with no datasource touched — when a required variable is missing', async () => {
-		for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
-		vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
-		vi.stubEnv('REDIS_KEY', '')
-		RedisConnect.mockClear()
-		disconnectAllDatabases.mockClear()
+  it('rejects — with no datasource touched — when a required variable is missing', async () => {
+    for (const k of REQUIRED_ENV_VARS) vi.stubEnv(k, shaped(k))
+    vi.stubEnv('REDIS_URL', 'redis://127.0.0.1:6379')
+    vi.stubEnv('REDIS_KEY', '')
+    RedisConnect.mockClear()
+    disconnectAllDatabases.mockClear()
 
-		await expect(start()).rejects.toThrow('Missing required environment variable: REDIS_KEY')
-		expect(RedisConnect).not.toHaveBeenCalled()
-		expect(disconnectAllDatabases).not.toHaveBeenCalled()
-	})
+    await expect(start()).rejects.toThrow('Missing required environment variable: REDIS_KEY')
+    expect(RedisConnect).not.toHaveBeenCalled()
+    expect(disconnectAllDatabases).not.toHaveBeenCalled()
+  })
 })

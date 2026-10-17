@@ -16,10 +16,10 @@ import mongoose, { Types } from 'mongoose'
 import { LoginUserType } from '../types/LoginUserType.mjs'
 
 interface IArgs {
-	email: string
-	password: string
-	rememberMe: boolean
-	turnstileToken?: string
+  email: string
+  password: string
+  rememberMe: boolean
+  turnstileToken?: string
 }
 
 /**
@@ -57,89 +57,89 @@ const PER_EMAIL_PER_HOUR = 60
  * secret rejects it. The client cannot weaken the gate by omitting the field — it can only fail to help.
  */
 export const loginUser = {
-	description: 'Log a customer in',
-	type: new GraphQLNonNull(LoginUserType),
-	args: {
-		email: { type: new GraphQLNonNull(GraphQLString) },
-		password: { type: new GraphQLNonNull(GraphQLString) },
-		rememberMe: { type: new GraphQLNonNull(GraphQLBoolean) },
-		turnstileToken: { type: GraphQLString }
-	},
-	// `IContextLogin` is koa-utils' two-method view of the cookie jar, and the whole of what this resolver
-	// needs: Apollo hands it the entire Koa context (see the `async context()` in src/index.mts) and
-	// declaring the narrow half is what stops anything but `setLoginCookies` reading off it. It used to be
-	// intersected with koa's `Context` for one reason — the caller's address, which the rate limiter
-	// bucketed on. That bucket is gone: `app.proxy` is off, so the address reachable here is nginx's own and
-	// metering it metered the whole platform. The per-caller limit is the edge's now, and nothing in this
-	// file reads a request property at all.
-	async resolve(_: unknown, args: IArgs, ctx: IContextLogin) {
-		const { password, rememberMe, turnstileToken } = args
-		// Normalized once, here, the same `.trim().toLowerCase()` every write path already applies before
-		// storing an address — so the rate-limit bucket below, the `login.email` lookup inside
-		// `tryLoginUser` and the Redis session hash all agree with what got stored, whatever casing or
-		// stray whitespace the caller's keyboard sent.
-		const email = args.email.trim().toLowerCase()
+  description: 'Log a customer in',
+  type: new GraphQLNonNull(LoginUserType),
+  args: {
+    email: { type: new GraphQLNonNull(GraphQLString) },
+    password: { type: new GraphQLNonNull(GraphQLString) },
+    rememberMe: { type: new GraphQLNonNull(GraphQLBoolean) },
+    turnstileToken: { type: GraphQLString }
+  },
+  // `IContextLogin` is koa-utils' two-method view of the cookie jar, and the whole of what this resolver
+  // needs: Apollo hands it the entire Koa context (see the `async context()` in src/index.mts) and
+  // declaring the narrow half is what stops anything but `setLoginCookies` reading off it. It used to be
+  // intersected with koa's `Context` for one reason — the caller's address, which the rate limiter
+  // bucketed on. That bucket is gone: `app.proxy` is off, so the address reachable here is nginx's own and
+  // metering it metered the whole platform. The per-caller limit is the edge's now, and nothing in this
+  // file reads a request property at all.
+  async resolve(_: unknown, args: IArgs, ctx: IContextLogin) {
+    const { password, rememberMe, turnstileToken } = args
+    // Normalized once, here, the same `.trim().toLowerCase()` every write path already applies before
+    // storing an address — so the rate-limit bucket below, the `login.email` lookup inside
+    // `tryLoginUser` and the Redis session hash all agree with what got stored, whatever casing or
+    // stray whitespace the caller's keyboard sent.
+    const email = args.email.trim().toLowerCase()
 
-		// Before the transaction and before bcrypt: the point of the counter is that a refused caller
-		// costs this process one Redis INCR, not a Mongo session plus a 14-round hash comparison.
-		await guardPublicLogin({
-			bucket: 'loginUser',
-			email,
-			turnstileToken,
-			perEmailPerHour: PER_EMAIL_PER_HOUR
-		})
+    // Before the transaction and before bcrypt: the point of the counter is that a refused caller
+    // costs this process one Redis INCR, not a Mongo session plus a 14-round hash comparison.
+    await guardPublicLogin({
+      bucket: 'loginUser',
+      email,
+      turnstileToken,
+      perEmailPerHour: PER_EMAIL_PER_HOUR
+    })
 
-		// Never observable, exactly as in `login.mts`: the happy path overwrites it before the `return`
-		// and the catch path never reaches the `return` at all, because `tryCatchRethrow` always throws.
-		// Stryker disable next-line StringLiteral: dead initializer, provably unobservable on any reachable path
-		let accessToken = ''
-		// ⚠️ **Lifted out of the transaction callback, along with the Redis mint and the cookie set that
-		// use them.** `session.withTransaction` silently re-invokes its callback on a
-		// `TransientTransactionError` (two near-simultaneous logins for the same account can WriteConflict
-		// inside `updateUserLoginStats`), and minting a Redis session or setting a cookie from inside that
-		// callback would mint — and set — a second time on every retry. Only the Mongo read and write
-		// below stay inside the callback; everything that is not itself transactional runs once, after the
-		// transaction has committed.
-		// Stryker disable next-line StringLiteral: dead initializer, provably unobservable on any reachable path
-		let refreshToken = ''
-		// Stryker disable next-line ObjectLiteral,StringLiteral: dead initializer, provably unobservable on any reachable path
-		let redisData: IRedisDataUser = { _id: '', email, tier: TIER.user }
+    // Never observable, exactly as in `login.mts`: the happy path overwrites it before the `return`
+    // and the catch path never reaches the `return` at all, because `tryCatchRethrow` always throws.
+    // Stryker disable next-line StringLiteral: dead initializer, provably unobservable on any reachable path
+    let accessToken = ''
+    // ⚠️ **Lifted out of the transaction callback, along with the Redis mint and the cookie set that
+    // use them.** `session.withTransaction` silently re-invokes its callback on a
+    // `TransientTransactionError` (two near-simultaneous logins for the same account can WriteConflict
+    // inside `updateUserLoginStats`), and minting a Redis session or setting a cookie from inside that
+    // callback would mint — and set — a second time on every retry. Only the Mongo read and write
+    // below stay inside the callback; everything that is not itself transactional runs once, after the
+    // transaction has committed.
+    // Stryker disable next-line StringLiteral: dead initializer, provably unobservable on any reachable path
+    let refreshToken = ''
+    // Stryker disable next-line ObjectLiteral,StringLiteral: dead initializer, provably unobservable on any reachable path
+    let redisData: IRedisDataUser = { _id: '', email, tier: TIER.user }
 
-		const session = await mongoose.startSession()
+    const session = await mongoose.startSession()
 
-		try {
-			await session.withTransaction(async () => {
-				const user = await tryLoginUser(email, password, session)
+    try {
+      await session.withTransaction(async () => {
+        const user = await tryLoginUser(email, password, session)
 
-				const id = user._id
-				const lastLogin = user.login.lastLogin ?? null
+        const id = user._id
+        const lastLogin = user.login.lastLogin ?? null
 
-				redisData = {
-					_id: id.toString(),
-					email,
-					tier: TIER.user
-				}
+        redisData = {
+          _id: id.toString(),
+          email,
+          tier: TIER.user
+        }
 
-				accessToken = generateAccessToken()
-				refreshToken = generateRefreshToken()
+        accessToken = generateAccessToken()
+        refreshToken = generateRefreshToken()
 
-				await updateUserLoginStats(id as Types.ObjectId, lastLogin, rememberMe, session)
-			})
-		} catch (e) {
-			// Same story as the initializer above: unreachable by the `return`, kept so the token never
-			// survives a partially-completed transaction in any future rearrangement of this block.
-			// Stryker disable next-line StringLiteral: dead reassignment, provably unobservable on any reachable path
-			accessToken = ''
-			tryCatchRethrow(e as Error | GraphQLError)
-		} finally {
-			await session.endSession()
-		}
+        await updateUserLoginStats(id as Types.ObjectId, lastLogin, rememberMe, session)
+      })
+    } catch (e) {
+      // Same story as the initializer above: unreachable by the `return`, kept so the token never
+      // survives a partially-completed transaction in any future rearrangement of this block.
+      // Stryker disable next-line StringLiteral: dead reassignment, provably unobservable on any reachable path
+      accessToken = ''
+      tryCatchRethrow(e as Error | GraphQLError)
+    } finally {
+      await session.endSession()
+    }
 
-		// Only reached once the transaction has committed for good — see the note above `refreshToken`.
-		// A retried callback re-runs the read/write above, idempotently; everything below runs exactly once.
-		await setRedisLoginSessionUser(accessToken, refreshToken, redisData, rememberMe)
-		setLoginCookies(ctx, refreshToken)
+    // Only reached once the transaction has committed for good — see the note above `refreshToken`.
+    // A retried callback re-runs the read/write above, idempotently; everything below runs exactly once.
+    await setRedisLoginSessionUser(accessToken, refreshToken, redisData, rememberMe)
+    setLoginCookies(ctx, refreshToken)
 
-		return { accessToken }
-	}
+    return { accessToken }
+  }
 }

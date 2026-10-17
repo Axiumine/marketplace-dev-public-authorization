@@ -10,15 +10,15 @@ import { Types } from 'mongoose'
  * which an admin clears by hand and which this collection deliberately does not have.
  */
 export interface IUserLoginCheckData {
-	_id: Types.ObjectId
-	login: {
-		password: string
-		firstLogin?: Date
-		lastLogin?: Date
-	}
-	emailVerify?: {
-		valid?: boolean
-	}
-	disabled?: boolean
-	deleted?: Date
+  _id: Types.ObjectId
+  login: {
+    password: string
+    firstLogin?: Date
+    lastLogin?: Date
+  }
+  emailVerify?: {
+    valid?: boolean
+  }
+  disabled?: boolean
+  deleted?: Date
 }

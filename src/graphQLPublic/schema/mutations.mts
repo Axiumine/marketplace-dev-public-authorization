@@ -8,8 +8,8 @@ import { loginUser } from './mutations/loginUser.mjs'
 // three differ in their model, their session `tier` and — for `loginUser` only — an email-verification
 // gate. A single `login(tier:)` would put that choice in the caller's hands.
 const MutationsPublic = new GraphQLObjectType({
-	name: 'MutationsPublic',
-	fields: { login, loginAdmin, loginUser }
+  name: 'MutationsPublic',
+  fields: { login, loginAdmin, loginUser }
 })
 
 export default MutationsPublic

@@ -40,8 +40,8 @@ const KEK = Buffer.from(process.env.KEYGRIP_KEK as string, 'base64')
 
 /** What a rotation produces: a new key in front of the ones already verifying cookies. */
 const ROTATED_KEYS = [
-	{ id: 'k3', material: randomBytes(64).toString('base64'), createdAt: new Date().toISOString() },
-	...ITEST_KEYGRIP_KEYS
+  { id: 'k3', material: randomBytes(64).toString('base64'), createdAt: new Date().toISOString() },
+  ...ITEST_KEYGRIP_KEYS
 ]
 
 let httpServer: Server
@@ -54,95 +54,95 @@ const signing = () => app.keys as Keygrip
 
 /** A holders row, split into the two things it holds. The fingerprint has no `@`; the timestamp does. */
 function holderRow(row: string | null | undefined) {
-	const at = (row as string).indexOf('@')
+  const at = (row as string).indexOf('@')
 
-	return [(row as string).slice(0, at), (row as string).slice(at + 1)]
+  return [(row as string).slice(0, at), (row as string).slice(at + 1)]
 }
 
 /** Poll until the process has adopted the key set, or give up after five seconds. */
 async function adopted(material: string) {
-	const expected = new Keygrip([material], 'sha512').sign('session-cookie')
+  const expected = new Keygrip([material], 'sha512').sign('session-cookie')
 
-	for (let attempt = 0; attempt < 200; attempt++) {
-		if (signing().sign('session-cookie') === expected) return true
-		await new Promise((resolve) => setTimeout(resolve, 25))
-	}
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (signing().sign('session-cookie') === expected) return true
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
 
-	return false
+  return false
 }
 
 beforeAll(async () => {
-	const server = await start()
-	if (!server) throw new Error('server failed to start against the real Redis cluster / MongoDB')
-	httpServer = server.httpServer
-	app = server.app
-	keygripWatch = server.keygripWatch
-	keygripSubscriber = server.keygripSubscriber
+  const server = await start()
+  if (!server) throw new Error('server failed to start against the real Redis cluster / MongoDB')
+  httpServer = server.httpServer
+  app = server.app
+  keygripWatch = server.keygripWatch
+  keygripSubscriber = server.keygripSubscriber
 })
 
 afterAll(async () => {
-	/*
-	 * ⚠️ Put back what this file rotated. Every file in the project shares one record, and one of them —
-	 * keygripFailure.itest.mts — asserts the version number in the boot refusal it triggers. Leaving the
-	 * record at 2 would make that file fail on a message that is perfectly correct, in whichever order
-	 * vitest happens to run them.
-	 */
-	await redisClient.hSet(KEYGRIP_KEY, {
-		version: '1',
-		wrapped: wrapKeygripKeys(ITEST_KEYGRIP_KEYS, 1, KEK),
-		fp: keygripFingerprint(ITEST_KEYGRIP_KEYS)
-	})
-	await redisClient.hDel(HOLDERS_KEY, SERVICE_NAME)
+  /*
+   * ⚠️ Put back what this file rotated. Every file in the project shares one record, and one of them —
+   * keygripFailure.itest.mts — asserts the version number in the boot refusal it triggers. Leaving the
+   * record at 2 would make that file fail on a message that is perfectly correct, in whichever order
+   * vitest happens to run them.
+   */
+  await redisClient.hSet(KEYGRIP_KEY, {
+    version: '1',
+    wrapped: wrapKeygripKeys(ITEST_KEYGRIP_KEYS, 1, KEK),
+    fp: keygripFingerprint(ITEST_KEYGRIP_KEYS)
+  })
+  await redisClient.hDel(HOLDERS_KEY, SERVICE_NAME)
 
-	clearInterval(keygripWatch)
-	await keygripSubscriber.close().catch(() => undefined)
-	await new Promise<void>((resolve) => httpServer.close(() => resolve()))
-	await redisClient.close()
-	await mongoose.disconnect()
+  clearInterval(keygripWatch)
+  await keygripSubscriber.close().catch(() => undefined)
+  await new Promise<void>((resolve) => httpServer.close(() => resolve()))
+  await redisClient.close()
+  await mongoose.disconnect()
 })
 
 describe('a rotation announced while the service is running', () => {
-	it('boots signing with the seeded key set and says so in the holders table', async () => {
-		expect(signing().sign('session-cookie')).toBe(new Keygrip([ITEST_KEYGRIP_KEYS[0].material], 'sha512').sign('session-cookie'))
+  it('boots signing with the seeded key set and says so in the holders table', async () => {
+    expect(signing().sign('session-cookie')).toBe(new Keygrip([ITEST_KEYGRIP_KEYS[0].material], 'sha512').sign('session-cookie'))
 
-		// `<fingerprint>@<ISO-8601>` under this service's own name — the row an admin reads to decide
-		// whether a rotation has reached everything that signs.
-		const [fp, stamp] = holderRow(await redisClient.hGet(HOLDERS_KEY, SERVICE_NAME))
+    // `<fingerprint>@<ISO-8601>` under this service's own name — the row an admin reads to decide
+    // whether a rotation has reached everything that signs.
+    const [fp, stamp] = holderRow(await redisClient.hGet(HOLDERS_KEY, SERVICE_NAME))
 
-		expect(fp).toBe(keygripFingerprint(ITEST_KEYGRIP_KEYS))
-		// A real timestamp, not a placeholder: it is what makes the row a heartbeat, and `keygripStatus`
-		// will read it to say how long ago each service was last seen.
-		expect(new Date(stamp).toISOString()).toBe(stamp)
-	})
+    expect(fp).toBe(keygripFingerprint(ITEST_KEYGRIP_KEYS))
+    // A real timestamp, not a placeholder: it is what makes the row a heartbeat, and `keygripStatus`
+    // will read it to say how long ago each service was last seen.
+    expect(new Date(stamp).toISOString()).toBe(stamp)
+  })
 
-	/*
-	 * ⚠️ The whole point of ADR-034, end to end: no restart, no redeploy, no environment file. The record
-	 * moves, a number goes out on the channel, and a process that was already serving picks up the new key
-	 * — while still verifying the cookies it signed a second earlier, which is what keeps a rotation from
-	 * logging the platform out.
-	 */
-	it('adopts the new key without a restart, and keeps verifying what it already signed', async () => {
-		const signedBefore = signing().sign('session-cookie')
+  /*
+   * ⚠️ The whole point of ADR-034, end to end: no restart, no redeploy, no environment file. The record
+   * moves, a number goes out on the channel, and a process that was already serving picks up the new key
+   * — while still verifying the cookies it signed a second earlier, which is what keeps a rotation from
+   * logging the platform out.
+   */
+  it('adopts the new key without a restart, and keeps verifying what it already signed', async () => {
+    const signedBefore = signing().sign('session-cookie')
 
-		await redisClient.hSet(KEYGRIP_KEY, {
-			version: '2',
-			wrapped: wrapKeygripKeys(ROTATED_KEYS, 2, KEK),
-			fp: keygripFingerprint(ROTATED_KEYS)
-		})
-		await redisClient.publish(ROTATED_CHANNEL, '2')
+    await redisClient.hSet(KEYGRIP_KEY, {
+      version: '2',
+      wrapped: wrapKeygripKeys(ROTATED_KEYS, 2, KEK),
+      fp: keygripFingerprint(ROTATED_KEYS)
+    })
+    await redisClient.publish(ROTATED_CHANNEL, '2')
 
-		expect(await adopted(ROTATED_KEYS[0].material)).toBe(true)
+    expect(await adopted(ROTATED_KEYS[0].material)).toBe(true)
 
-		// The cookies issued before the rotation still verify, at their own index — the grace period is the
-		// reason the older keys travel in the record at all.
-		expect(signing().index('session-cookie', signedBefore)).toBe(1)
-	})
+    // The cookies issued before the rotation still verify, at their own index — the grace period is the
+    // reason the older keys travel in the record at all.
+    expect(signing().index('session-cookie', signedBefore)).toBe(1)
+  })
 
-	// And it says so where the admin looks: the row moves to the new fingerprint under the same name,
-	// which is how `keygripStatus` will be able to answer "has this landed everywhere yet".
-	it('restamps its holders row with the fingerprint it adopted', async () => {
-		const [fp] = holderRow(await redisClient.hGet(HOLDERS_KEY, SERVICE_NAME))
+  // And it says so where the admin looks: the row moves to the new fingerprint under the same name,
+  // which is how `keygripStatus` will be able to answer "has this landed everywhere yet".
+  it('restamps its holders row with the fingerprint it adopted', async () => {
+    const [fp] = holderRow(await redisClient.hGet(HOLDERS_KEY, SERVICE_NAME))
 
-		expect(fp).toBe(keygripFingerprint(ROTATED_KEYS))
-	})
+    expect(fp).toBe(keygripFingerprint(ROTATED_KEYS))
+  })
 })

@@ -33,28 +33,28 @@ import { ClientSession } from 'mongoose'
  * @param session
  */
 export async function tryLoginShopOwner(
-	email: string,
-	password: string,
-	session: ClientSession
+  email: string,
+  password: string,
+  session: ClientSession
 ): Promise<IShopOwnerLoginCheckData> {
-	const user: IShopOwnerLoginCheckData | null = await ShopOwner.findOne(
-		{ 'login.email': email },
-		'_id disabled deleted waitApprov emailVerify.valid login.password login.firstLogin login.lastLogin login.onboardingStep login.onboardingDone'
-	)
-		.session(session)
-		.lean()
+  const user: IShopOwnerLoginCheckData | null = await ShopOwner.findOne(
+    { 'login.email': email },
+    '_id disabled deleted waitApprov emailVerify.valid login.password login.firstLogin login.lastLogin login.onboardingStep login.onboardingDone'
+  )
+    .session(session)
+    .lean()
 
-	if (user === null) {
-		// ⚠️ Same wall-clock cost as a real compare, so "no such account" cannot be timed apart from
-		// "wrong password" — see `compareAgainstDummyHash`'s own comment.
-		await compareAgainstDummyHash(password)
-		throw throwUnauthorizedError()
-	}
-	await checkUserAuthorization(user, password, user.login.password) // resolves when the password matches, throws otherwise
+  if (user === null) {
+    // ⚠️ Same wall-clock cost as a real compare, so "no such account" cannot be timed apart from
+    // "wrong password" — see `compareAgainstDummyHash`'s own comment.
+    await compareAgainstDummyHash(password)
+    throw throwUnauthorizedError()
+  }
+  await checkUserAuthorization(user, password, user.login.password) // resolves when the password matches, throws otherwise
 
-	checkShopOwnerEmailVerified(user)
+  checkShopOwnerEmailVerified(user)
 
-	checkShopOwnerApproval(user)
+  checkShopOwnerApproval(user)
 
-	return user
+  return user
 }

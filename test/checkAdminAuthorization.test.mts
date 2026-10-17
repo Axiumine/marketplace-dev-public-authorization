@@ -12,34 +12,34 @@ const { checkAdminAuthorization } = await import('../src/lib/db/login/checkAdmin
 const admin = { disabled: false } as IAuthorizationDisDel
 
 describe('checkAdminAuthorization', () => {
-	beforeEach(() => {
-		compareHashAsync.mockReset()
-		checkUserAuthorizationDisDel.mockReset()
-	})
+  beforeEach(() => {
+    compareHashAsync.mockReset()
+    checkUserAuthorizationDisDel.mockReset()
+  })
 
-	it('runs the disabled/deleted gate once the password matches', async () => {
-		compareHashAsync.mockResolvedValueOnce(true)
+  it('runs the disabled/deleted gate once the password matches', async () => {
+    compareHashAsync.mockResolvedValueOnce(true)
 
-		await expect(checkAdminAuthorization(admin, 'clear', 'hash')).resolves.toBeUndefined()
-		expect(compareHashAsync).toHaveBeenCalledExactlyOnceWith('clear', 'hash')
-		expect(checkUserAuthorizationDisDel).toHaveBeenCalledExactlyOnceWith(admin)
-	})
+    await expect(checkAdminAuthorization(admin, 'clear', 'hash')).resolves.toBeUndefined()
+    expect(compareHashAsync).toHaveBeenCalledExactlyOnceWith('clear', 'hash')
+    expect(checkUserAuthorizationDisDel).toHaveBeenCalledExactlyOnceWith(admin)
+  })
 
-	// Same rejection as an unknown email: the caller must not be able to tell the two apart.
-	// Order matters too — a wrong password must not reveal whether the account exists or is disabled.
-	it('rejects with Unauthorized without reaching the gate when the password does not match', async () => {
-		compareHashAsync.mockResolvedValueOnce(false)
+  // Same rejection as an unknown email: the caller must not be able to tell the two apart.
+  // Order matters too — a wrong password must not reveal whether the account exists or is disabled.
+  it('rejects with Unauthorized without reaching the gate when the password does not match', async () => {
+    compareHashAsync.mockResolvedValueOnce(false)
 
-		await expect(checkAdminAuthorization(admin, 'clear', 'hash')).rejects.toThrow('Unauthorized')
-		expect(checkUserAuthorizationDisDel).not.toHaveBeenCalled()
-	})
+    await expect(checkAdminAuthorization(admin, 'clear', 'hash')).rejects.toThrow('Unauthorized')
+    expect(checkUserAuthorizationDisDel).not.toHaveBeenCalled()
+  })
 
-	it('propagates the gate rejection for a disabled or deleted admin', async () => {
-		compareHashAsync.mockResolvedValueOnce(true)
-		checkUserAuthorizationDisDel.mockImplementationOnce(() => {
-			throw new Error('disabled')
-		})
+  it('propagates the gate rejection for a disabled or deleted admin', async () => {
+    compareHashAsync.mockResolvedValueOnce(true)
+    checkUserAuthorizationDisDel.mockImplementationOnce(() => {
+      throw new Error('disabled')
+    })
 
-		await expect(checkAdminAuthorization(admin, 'clear', 'hash')).rejects.toThrow('disabled')
-	})
+    await expect(checkAdminAuthorization(admin, 'clear', 'hash')).rejects.toThrow('disabled')
+  })
 })
