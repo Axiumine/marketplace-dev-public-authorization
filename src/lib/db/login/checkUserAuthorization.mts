@@ -11,14 +11,14 @@ import { checkUserAuthorizationDisDel } from '@axiumine/marketplace-common/other
  * @param pwd2
  */
 export async function checkUserAuthorization(user: IAuthorizationDisDel, pwd1: string, pwd2: string) {
-	// the account is in the shopOwner collection
-	//console.log('compare pass 1')
-	const ret = await compareHashAsync(pwd1, pwd2)
-	//console.log('compare pass 2')
+  // the account is in the shopOwner collection
+  //console.log('compare pass 1')
+  const ret = await compareHashAsync(pwd1, pwd2)
+  //console.log('compare pass 2')
 
-	if (!ret) {
-		throw throwUnauthorizedError() //@fixme email carrying loginErrorMsg: the password is the same either way.
-	}
+  if (!ret) {
+    throw throwUnauthorizedError() //@fixme email carrying loginErrorMsg: the password is the same either way.
+  }
 
-	checkUserAuthorizationDisDel(user)
+  checkUserAuthorizationDisDel(user)
 }

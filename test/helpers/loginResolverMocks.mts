@@ -20,47 +20,47 @@ import { vi } from 'vitest'
  * and its async form is what lets it reach this module at all.
  */
 export function loginResolverMocks() {
-	const endSession = vi.fn()
-	const withTransaction = vi.fn(async (fn: () => Promise<void>) => fn())
-	const startSession = vi.fn(async () => ({ withTransaction, endSession }))
-	const guardPublicLogin = vi.fn()
-	const setLoginCookies = vi.fn()
-	const captureException = vi.fn()
+  const endSession = vi.fn()
+  const withTransaction = vi.fn(async (fn: () => Promise<void>) => fn())
+  const startSession = vi.fn(async () => ({ withTransaction, endSession }))
+  const guardPublicLogin = vi.fn()
+  const setLoginCookies = vi.fn()
+  const captureException = vi.fn()
 
-	return {
-		ACCESS: 'access-token',
-		REFRESH: 'refresh-token',
-		guardPublicLogin,
-		setLoginCookies,
-		captureException,
-		startSession,
-		withTransaction,
-		endSession,
+  return {
+    ACCESS: 'access-token',
+    REFRESH: 'refresh-token',
+    guardPublicLogin,
+    setLoginCookies,
+    captureException,
+    startSession,
+    withTransaction,
+    endSession,
 
-		// Only `startSession` is swapped: `Types` must stay real, so the `_id` each suite builds is a
-		// genuine ObjectId rather than something that merely stringifies like one.
-		mongooseWithMockedSession: async (importOriginal: <T>() => Promise<T>) => {
-			const actual = await importOriginal<typeof import('mongoose')>()
+    // Only `startSession` is swapped: `Types` must stay real, so the `_id` each suite builds is a
+    // genuine ObjectId rather than something that merely stringifies like one.
+    mongooseWithMockedSession: async (importOriginal: <T>() => Promise<T>) => {
+      const actual = await importOriginal<typeof import('mongoose')>()
 
-			return { ...actual, default: { ...actual.default, startSession } }
-		},
+      return { ...actual, default: { ...actual.default, startSession } }
+    },
 
-		/**
-		 * The reset for the mocks created here, so a suite's `beforeEach` names only its own.
-		 *
-		 * `mockClear` for the three session mocks and `mockReset` for the rest: clearing keeps
-		 * `withTransaction`'s run-the-callback implementation and `startSession`'s return value, which
-		 * a reset would wipe and no test re-declares. The guard is reset *and* re-resolved for the
-		 * mirror-image reason — almost every test runs past it, and a guard answering `undefined`
-		 * instead of a promise fails them all at the `await`.
-		 */
-		resetSharedLoginMocks() {
-			guardPublicLogin.mockReset().mockResolvedValue(undefined)
-			setLoginCookies.mockReset()
-			captureException.mockReset()
-			startSession.mockClear()
-			withTransaction.mockClear()
-			endSession.mockClear()
-		}
-	}
+    /**
+     * The reset for the mocks created here, so a suite's `beforeEach` names only its own.
+     *
+     * `mockClear` for the three session mocks and `mockReset` for the rest: clearing keeps
+     * `withTransaction`'s run-the-callback implementation and `startSession`'s return value, which
+     * a reset would wipe and no test re-declares. The guard is reset *and* re-resolved for the
+     * mirror-image reason — almost every test runs past it, and a guard answering `undefined`
+     * instead of a promise fails them all at the `await`.
+     */
+    resetSharedLoginMocks() {
+      guardPublicLogin.mockReset().mockResolvedValue(undefined)
+      setLoginCookies.mockReset()
+      captureException.mockReset()
+      startSession.mockClear()
+      withTransaction.mockClear()
+      endSession.mockClear()
+    }
+  }
 }

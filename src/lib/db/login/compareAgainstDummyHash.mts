@@ -26,5 +26,5 @@ const DUMMY_PASSWORD_HASH = '$2b$14$a/hyKqhGryzvbkfvT/5h3.UUO9aGXEmh3VlVVods6LdQ
  * @param password the caller-supplied plaintext; discarded once the (always-failing) compare returns
  */
 export async function compareAgainstDummyHash(password: string): Promise<void> {
-	await compareHashAsync(password, DUMMY_PASSWORD_HASH)
+  await compareHashAsync(password, DUMMY_PASSWORD_HASH)
 }

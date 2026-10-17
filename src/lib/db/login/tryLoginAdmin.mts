@@ -12,22 +12,22 @@ import { ClientSession } from 'mongoose'
  * @param session
  */
 export async function tryLoginAdmin(email: string, password: string, session: ClientSession): Promise<IAdminLoginCheckData> {
-	const admin: IAdminLoginCheckData | null = await Admin.findOne(
-		{ 'login.email': email },
-		'_id disabled deleted login.password login.lastLogin'
-	)
-		.session(session)
-		.lean()
+  const admin: IAdminLoginCheckData | null = await Admin.findOne(
+    { 'login.email': email },
+    '_id disabled deleted login.password login.lastLogin'
+  )
+    .session(session)
+    .lean()
 
-	if (admin === null) {
-		// ⚠️ Same wall-clock cost as a real compare, so "no such account" cannot be timed apart from
-		// "wrong password" — see `compareAgainstDummyHash`'s own comment.
-		await compareAgainstDummyHash(password)
-		throw throwUnauthorizedError()
-	}
-	// `admin` first: the disabled/deleted gate inside needs the projected flags, which is why the
-	// projection above selects them. Mirrors tryLoginShopOwner/checkUserAuthorization.
-	await checkAdminAuthorization(admin, password, admin.login.password) // resolves when the password matches, throws otherwise
+  if (admin === null) {
+    // ⚠️ Same wall-clock cost as a real compare, so "no such account" cannot be timed apart from
+    // "wrong password" — see `compareAgainstDummyHash`'s own comment.
+    await compareAgainstDummyHash(password)
+    throw throwUnauthorizedError()
+  }
+  // `admin` first: the disabled/deleted gate inside needs the projected flags, which is why the
+  // projection above selects them. Mirrors tryLoginShopOwner/checkUserAuthorization.
+  await checkAdminAuthorization(admin, password, admin.login.password) // resolves when the password matches, throws otherwise
 
-	return admin
+  return admin
 }

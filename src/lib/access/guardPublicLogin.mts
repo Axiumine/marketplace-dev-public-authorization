@@ -6,18 +6,18 @@ import { assertUnderRateLimit } from '@axiumine/marketplace-common/others/assert
 export const RATE_WINDOW_SECONDS = 3600
 
 export interface IGuardPublicLoginArgs {
-	/** Names the Redis counter. One key is derived from it, `<bucket>:email`. */
-	bucket: string
-	/**
-	 * Already lowercased and trimmed by the caller — otherwise `A@x.it` and `a@x.it` meter separately.
-	 *
-	 * ⚠️ **Nothing shows you when that is forgotten any more.** The address used to be readable in the
-	 * Redis key, so a stray capital was visible to anyone looking at the counters; it is hashed now, and
-	 * two spellings simply produce two unrelated digests and two budgets nobody can tell apart.
-	 */
-	email: string
-	turnstileToken?: string
-	perEmailPerHour: number
+  /** Names the Redis counter. One key is derived from it, `<bucket>:email`. */
+  bucket: string
+  /**
+   * Already lowercased and trimmed by the caller — otherwise `A@x.it` and `a@x.it` meter separately.
+   *
+   * ⚠️ **Nothing shows you when that is forgotten any more.** The address used to be readable in the
+   * Redis key, so a stray capital was visible to anyone looking at the counters; it is hashed now, and
+   * two spellings simply produce two unrelated digests and two budgets nobody can tell apart.
+   */
+  email: string
+  turnstileToken?: string
+  perEmailPerHour: number
 }
 
 /**
@@ -50,9 +50,9 @@ export interface IGuardPublicLoginArgs {
  * distributed guessing attack on one account at a rate bcrypt at `SALT_ROUNDS = 14` makes hopeless.
  */
 export async function guardPublicLogin(args: IGuardPublicLoginArgs) {
-	const { bucket, email, turnstileToken, perEmailPerHour } = args
+  const { bucket, email, turnstileToken, perEmailPerHour } = args
 
-	await assertUnderRateLimit(redisClient, `${bucket}:email`, email, perEmailPerHour, RATE_WINDOW_SECONDS)
+  await assertUnderRateLimit(redisClient, `${bucket}:email`, email, perEmailPerHour, RATE_WINDOW_SECONDS)
 
-	await assertTurnstile(turnstileToken)
+  await assertTurnstile(turnstileToken)
 }

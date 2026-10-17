@@ -16,57 +16,57 @@ const { tryLoginAdmin } = await import('../src/lib/db/login/tryLoginAdmin.mts')
 
 const session = { id: 'session' } as unknown as ClientSession
 const admin = {
-	_id: new Types.ObjectId('507f1f77bcf86cd799439011'),
-	login: { password: 'stored-hash', lastLogin: new Date('2026-01-01T00:00:00.000Z') }
+  _id: new Types.ObjectId('507f1f77bcf86cd799439011'),
+  login: { password: 'stored-hash', lastLogin: new Date('2026-01-01T00:00:00.000Z') }
 }
 
 describe('tryLoginAdmin', () => {
-	beforeEach(() => {
-		lean.mockReset()
-		sessionFn.mockClear()
-		findOne.mockClear()
-		checkAdminAuthorization.mockReset()
-		compareAgainstDummyHash.mockReset().mockResolvedValue(undefined)
-	})
+  beforeEach(() => {
+    lean.mockReset()
+    sessionFn.mockClear()
+    findOne.mockClear()
+    checkAdminAuthorization.mockReset()
+    compareAgainstDummyHash.mockReset().mockResolvedValue(undefined)
+  })
 
-	it('returns the lean admin after the password check, inside the caller session', async () => {
-		lean.mockResolvedValueOnce(admin)
+  it('returns the lean admin after the password check, inside the caller session', async () => {
+    lean.mockResolvedValueOnce(admin)
 
-		await expect(tryLoginAdmin('admin@marketplace.test', 'clear', session)).resolves.toBe(admin)
+    await expect(tryLoginAdmin('admin@marketplace.test', 'clear', session)).resolves.toBe(admin)
 
-		// The projection is part of the contract: loginAdmin reads _id and login.lastLogin off the
-		// result, and the password check needs login.password.
-		expect(findOne).toHaveBeenCalledExactlyOnceWith(
-			{ 'login.email': 'admin@marketplace.test' },
-			'_id disabled deleted login.password login.lastLogin'
-		)
-		expect(sessionFn).toHaveBeenCalledExactlyOnceWith(session)
-		// The whole lean admin goes in, not just the hash: the disabled/deleted gate inside reads
-		// the projected flags off it.
-		expect(checkAdminAuthorization).toHaveBeenCalledExactlyOnceWith(admin, 'clear', 'stored-hash')
-	})
+    // The projection is part of the contract: loginAdmin reads _id and login.lastLogin off the
+    // result, and the password check needs login.password.
+    expect(findOne).toHaveBeenCalledExactlyOnceWith(
+      { 'login.email': 'admin@marketplace.test' },
+      '_id disabled deleted login.password login.lastLogin'
+    )
+    expect(sessionFn).toHaveBeenCalledExactlyOnceWith(session)
+    // The whole lean admin goes in, not just the hash: the disabled/deleted gate inside reads
+    // the projected flags off it.
+    expect(checkAdminAuthorization).toHaveBeenCalledExactlyOnceWith(admin, 'clear', 'stored-hash')
+  })
 
-	it('rejects with Unauthorized when the email matches no admin', async () => {
-		lean.mockResolvedValueOnce(null)
+  it('rejects with Unauthorized when the email matches no admin', async () => {
+    lean.mockResolvedValueOnce(null)
 
-		await expect(tryLoginAdmin('nobody@marketplace.test', 'clear', session)).rejects.toThrow('Unauthorized')
-		expect(checkAdminAuthorization).not.toHaveBeenCalled()
-	})
+    await expect(tryLoginAdmin('nobody@marketplace.test', 'clear', session)).rejects.toThrow('Unauthorized')
+    expect(checkAdminAuthorization).not.toHaveBeenCalled()
+  })
 
-	// B44: an unknown email used to throw immediately while a known one always paid for a bcrypt-14
-	// compare first — a timing oracle for account enumeration ahead of the generic error message.
-	// Running a compare that can never succeed on this branch too equalizes the wall-clock cost.
-	it('runs a dummy bcrypt compare before refusing an unknown admin, with the caller-supplied password', async () => {
-		lean.mockResolvedValueOnce(null)
+  // B44: an unknown email used to throw immediately while a known one always paid for a bcrypt-14
+  // compare first — a timing oracle for account enumeration ahead of the generic error message.
+  // Running a compare that can never succeed on this branch too equalizes the wall-clock cost.
+  it('runs a dummy bcrypt compare before refusing an unknown admin, with the caller-supplied password', async () => {
+    lean.mockResolvedValueOnce(null)
 
-		await expect(tryLoginAdmin('nobody@marketplace.test', 'the-supplied-password', session)).rejects.toThrow('Unauthorized')
-		expect(compareAgainstDummyHash).toHaveBeenCalledExactlyOnceWith('the-supplied-password')
-	})
+    await expect(tryLoginAdmin('nobody@marketplace.test', 'the-supplied-password', session)).rejects.toThrow('Unauthorized')
+    expect(compareAgainstDummyHash).toHaveBeenCalledExactlyOnceWith('the-supplied-password')
+  })
 
-	it('propagates the rejection from the password check', async () => {
-		lean.mockResolvedValueOnce(admin)
-		checkAdminAuthorization.mockRejectedValueOnce(new Error('Unauthorized'))
+  it('propagates the rejection from the password check', async () => {
+    lean.mockResolvedValueOnce(admin)
+    checkAdminAuthorization.mockRejectedValueOnce(new Error('Unauthorized'))
 
-		await expect(tryLoginAdmin('admin@marketplace.test', 'wrong', session)).rejects.toThrow('Unauthorized')
-	})
+    await expect(tryLoginAdmin('admin@marketplace.test', 'wrong', session)).rejects.toThrow('Unauthorized')
+  })
 })

@@ -2,9 +2,9 @@ import { IAuthorizationDisDel } from '@axiumine/koa-utils/lib/IAuthorizationDisD
 import { Types } from 'mongoose'
 
 export interface IAdminLoginCheckData extends IAuthorizationDisDel {
-	_id: Types.ObjectId
-	login: {
-		password: string
-		lastLogin?: Date
-	}
+  _id: Types.ObjectId
+  login: {
+    password: string
+    lastLogin?: Date
+  }
 }

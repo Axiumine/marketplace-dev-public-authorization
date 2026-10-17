@@ -5,16 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // The tier-neutral half of the setup, shared with loginAdmin.test.mts and loginUser.test.mts. It
 // comes through vi.hoisted rather than a plain import, and the helper's own comment says why.
 const {
-	ACCESS,
-	REFRESH,
-	guardPublicLogin,
-	setLoginCookies,
-	captureException,
-	startSession,
-	withTransaction,
-	endSession,
-	mongooseWithMockedSession,
-	resetSharedLoginMocks
+  ACCESS,
+  REFRESH,
+  guardPublicLogin,
+  setLoginCookies,
+  captureException,
+  startSession,
+  withTransaction,
+  endSession,
+  mongooseWithMockedSession,
+  resetSharedLoginMocks
 } = await vi.hoisted(async () => (await import('./helpers/loginResolverMocks.mts')).loginResolverMocks())
 
 // `makeOnboardingData` has no counterpart on the other two tiers: only a shop owner is walked
@@ -32,8 +32,8 @@ vi.mock('@lib/db/redis/setRedisLoginSessionShopOwner.mjs', () => ({ setRedisLogi
 vi.mock('@axiumine/koa-utils/lib/setLoginCookies', () => ({ setLoginCookies }))
 vi.mock('@axiumine/koa-utils/lib/makeOnboardingData', () => ({ makeOnboardingData }))
 vi.mock('@axiumine/koa-utils/lib/tokens', () => ({
-	generateAccessToken: () => ACCESS,
-	generateRefreshToken: () => REFRESH
+  generateAccessToken: () => ACCESS,
+  generateRefreshToken: () => REFRESH
 }))
 vi.mock('@sentry/node', () => ({ captureException }))
 
@@ -50,187 +50,187 @@ const args = { email: 'shop@marketplace.test', password: 'clear', rememberMe: tr
 let log: ReturnType<typeof vi.spyOn>
 
 describe('login', () => {
-	beforeEach(() => {
-		resetSharedLoginMocks()
-		tryLoginShopOwner.mockReset()
-		updateLoginStats.mockReset().mockResolvedValue(undefined)
-		setRedisLoginSessionShopOwner.mockReset().mockResolvedValue(undefined)
-		makeOnboardingData.mockReset()
-		log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-	})
-	afterEach(() => log.mockRestore())
+  beforeEach(() => {
+    resetSharedLoginMocks()
+    tryLoginShopOwner.mockReset()
+    updateLoginStats.mockReset().mockResolvedValue(undefined)
+    setRedisLoginSessionShopOwner.mockReset().mockResolvedValue(undefined)
+    makeOnboardingData.mockReset()
+    log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+  })
+  afterEach(() => log.mockRestore())
 
-	it('opens a session, stores the Redis session, updates the stats and sets the refresh cookie', async () => {
-		const lastLogin = new Date('2026-01-01T00:00:00.000Z')
-		tryLoginShopOwner.mockResolvedValueOnce({ _id, login: { lastLogin, onboardingDone: true } })
-		makeOnboardingData.mockReturnValueOnce('personalData')
+  it('opens a session, stores the Redis session, updates the stats and sets the refresh cookie', async () => {
+    const lastLogin = new Date('2026-01-01T00:00:00.000Z')
+    tryLoginShopOwner.mockResolvedValueOnce({ _id, login: { lastLogin, onboardingDone: true } })
+    makeOnboardingData.mockReturnValueOnce('personalData')
 
-		const result = await login.resolve(null, args, ctx)
+    const result = await login.resolve(null, args, ctx)
 
-		expect(tryLoginShopOwner).toHaveBeenCalledExactlyOnceWith(args.email, args.password, { withTransaction, endSession })
-		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
-			ACCESS,
-			REFRESH,
-			{
-				_id: _id.toString(),
-				email: args.email,
-				tier: 'shopOwner',
-				onboardingStep: 'personalData'
-			},
-			true
-		)
-		expect(updateLoginStats).toHaveBeenCalledExactlyOnceWith(_id, lastLogin, true, { withTransaction, endSession })
-		expect(setLoginCookies).toHaveBeenCalledExactlyOnceWith(ctx, REFRESH)
-		expect(endSession).toHaveBeenCalledTimes(1)
+    expect(tryLoginShopOwner).toHaveBeenCalledExactlyOnceWith(args.email, args.password, { withTransaction, endSession })
+    expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
+      ACCESS,
+      REFRESH,
+      {
+        _id: _id.toString(),
+        email: args.email,
+        tier: 'shopOwner',
+        onboardingStep: 'personalData'
+      },
+      true
+    )
+    expect(updateLoginStats).toHaveBeenCalledExactlyOnceWith(_id, lastLogin, true, { withTransaction, endSession })
+    expect(setLoginCookies).toHaveBeenCalledExactlyOnceWith(ctx, REFRESH)
+    expect(endSession).toHaveBeenCalledTimes(1)
 
-		// The step reaches the caller as well as the hash. It was dropped on the way out until
-		// 2026-09-06 — computed, stored, and then answered as '' / false to every shop owner (R53).
-		expect(result).toEqual({ onboardingStep: 'personalData', onboardingDone: true, accessToken: ACCESS })
-	})
+    // The step reaches the caller as well as the hash. It was dropped on the way out until
+    // 2026-09-06 — computed, stored, and then answered as '' / false to every shop owner (R53).
+    expect(result).toEqual({ onboardingStep: 'personalData', onboardingDone: true, accessToken: ACCESS })
+  })
 
-	// `makeOnboardingData` returns `''` for an shopOwner who is done and has no step recorded, and that
-	// is an answer rather than the absence of one: `onboardingDone` is true and the step is empty. The
-	// null case below is the other one, and the two must not collapse into each other.
-	it('answers an empty step as done rather than as not started', async () => {
-		tryLoginShopOwner.mockResolvedValueOnce({ _id, login: { onboardingDone: true } })
-		makeOnboardingData.mockReturnValueOnce('')
+  // `makeOnboardingData` returns `''` for an shopOwner who is done and has no step recorded, and that
+  // is an answer rather than the absence of one: `onboardingDone` is true and the step is empty. The
+  // null case below is the other one, and the two must not collapse into each other.
+  it('answers an empty step as done rather than as not started', async () => {
+    tryLoginShopOwner.mockResolvedValueOnce({ _id, login: { onboardingDone: true } })
+    makeOnboardingData.mockReturnValueOnce('')
 
-		const result = await login.resolve(null, args, ctx)
+    const result = await login.resolve(null, args, ctx)
 
-		expect(result).toEqual({ onboardingStep: '', onboardingDone: true, accessToken: ACCESS })
-		// Empty is still a value, so the Redis hash carries the key — `step !== null` decides both.
-		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
-			ACCESS,
-			REFRESH,
-			{ _id: _id.toString(), email: args.email, tier: 'shopOwner', onboardingStep: '' },
-			true
-		)
-	})
+    expect(result).toEqual({ onboardingStep: '', onboardingDone: true, accessToken: ACCESS })
+    // Empty is still a value, so the Redis hash carries the key — `step !== null` decides both.
+    expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
+      ACCESS,
+      REFRESH,
+      { _id: _id.toString(), email: args.email, tier: 'shopOwner', onboardingStep: '' },
+      true
+    )
+  })
 
-	// makeOnboardingData returns null for an shopOwner that never finished onboarding; the key
-	// must then be absent from the Redis hash, not present and empty.
-	it('omits onboardingStep from the Redis payload and passes a null lastLogin on the first login', async () => {
-		tryLoginShopOwner.mockResolvedValueOnce({ _id, login: {} })
-		makeOnboardingData.mockReturnValueOnce(null)
+  // makeOnboardingData returns null for an shopOwner that never finished onboarding; the key
+  // must then be absent from the Redis hash, not present and empty.
+  it('omits onboardingStep from the Redis payload and passes a null lastLogin on the first login', async () => {
+    tryLoginShopOwner.mockResolvedValueOnce({ _id, login: {} })
+    makeOnboardingData.mockReturnValueOnce(null)
 
-		const result = await login.resolve(null, args, ctx)
+    const result = await login.resolve(null, args, ctx)
 
-		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
-			ACCESS,
-			REFRESH,
-			{
-				_id: _id.toString(),
-				email: args.email,
-				tier: 'shopOwner'
-			},
-			true
-		)
-		expect(updateLoginStats).toHaveBeenCalledExactlyOnceWith(_id, null, true, expect.anything())
+    expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
+      ACCESS,
+      REFRESH,
+      {
+        _id: _id.toString(),
+        email: args.email,
+        tier: 'shopOwner'
+      },
+      true
+    )
+    expect(updateLoginStats).toHaveBeenCalledExactlyOnceWith(_id, null, true, expect.anything())
 
-		// null is the one answer that is not a step: the response says not-done, and says it with an
-		// empty string rather than with the null the derivation returned.
-		expect(result).toEqual({ onboardingStep: '', onboardingDone: false, accessToken: ACCESS })
-	})
+    // null is the one answer that is not a step: the response says not-done, and says it with an
+    // empty string rather than with the null the derivation returned.
+    expect(result).toEqual({ onboardingStep: '', onboardingDone: false, accessToken: ACCESS })
+  })
 
-	// The counter is worth nothing if it is spent after the work it is meant to refuse. `guardPublicLogin`
-	// runs before the Mongo session and before bcrypt, so a refused caller costs one Redis INCR.
-	it('refuses a rate-limited caller before opening a session or touching the database', async () => {
-		guardPublicLogin.mockRejectedValueOnce(new Error('Too Many Requests'))
+  // The counter is worth nothing if it is spent after the work it is meant to refuse. `guardPublicLogin`
+  // runs before the Mongo session and before bcrypt, so a refused caller costs one Redis INCR.
+  it('refuses a rate-limited caller before opening a session or touching the database', async () => {
+    guardPublicLogin.mockRejectedValueOnce(new Error('Too Many Requests'))
 
-		await expect(login.resolve(null, args, ctx)).rejects.toThrow('Too Many Requests')
+    await expect(login.resolve(null, args, ctx)).rejects.toThrow('Too Many Requests')
 
-		expect(startSession).not.toHaveBeenCalled()
-		expect(tryLoginShopOwner).not.toHaveBeenCalled()
-		expect(setLoginCookies).not.toHaveBeenCalled()
-	})
+    expect(startSession).not.toHaveBeenCalled()
+    expect(tryLoginShopOwner).not.toHaveBeenCalled()
+    expect(setLoginCookies).not.toHaveBeenCalled()
+  })
 
-	// The limit is policy, so it is asserted rather than left to whoever edits the constant next: 60 per
-	// email is set high on purpose, because anyone who knows a shop owner's address can spend that budget
-	// and lock its owner out of their own back office. The per-caller half is nginx's `mkt_owner_auth`.
-	it('meters on the login bucket at 60 per email, with a normalised address', async () => {
-		tryLoginShopOwner.mockResolvedValueOnce({ _id, login: {} })
-		makeOnboardingData.mockReturnValueOnce(null)
+  // The limit is policy, so it is asserted rather than left to whoever edits the constant next: 60 per
+  // email is set high on purpose, because anyone who knows a shop owner's address can spend that budget
+  // and lock its owner out of their own back office. The per-caller half is nginx's `mkt_owner_auth`.
+  it('meters on the login bucket at 60 per email, with a normalised address', async () => {
+    tryLoginShopOwner.mockResolvedValueOnce({ _id, login: {} })
+    makeOnboardingData.mockReturnValueOnce(null)
 
-		await login.resolve(null, { ...args, email: '  Shop@Marketplace.TEST  ' }, ctx)
+    await login.resolve(null, { ...args, email: '  Shop@Marketplace.TEST  ' }, ctx)
 
-		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith({
-			bucket: 'login',
-			email: 'shop@marketplace.test',
-			turnstileToken: args.turnstileToken,
-			perEmailPerHour: 60
-		})
-	})
+    expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith({
+      bucket: 'login',
+      email: 'shop@marketplace.test',
+      turnstileToken: args.turnstileToken,
+      perEmailPerHour: 60
+    })
+  })
 
-	// B5: every write path (registration, password reset) normalizes with `.trim().toLowerCase()`
-	// before it ever reaches Mongo, so `login.email` in the collection is always lowercase and
-	// trimmed. Before this fix, only the rate-limit bucket got the normalised address — the DB lookup
-	// and the Redis session hash still got the raw one, so a correct password failed whenever the
-	// caller's casing or whitespace drifted from what was stored (autofill, a mobile keyboard, …).
-	it('normalises the email before it reaches the DB lookup and the Redis session hash, not just the rate limiter', async () => {
-		tryLoginShopOwner.mockResolvedValueOnce({ _id, login: {} })
-		makeOnboardingData.mockReturnValueOnce(null)
+  // B5: every write path (registration, password reset) normalizes with `.trim().toLowerCase()`
+  // before it ever reaches Mongo, so `login.email` in the collection is always lowercase and
+  // trimmed. Before this fix, only the rate-limit bucket got the normalised address — the DB lookup
+  // and the Redis session hash still got the raw one, so a correct password failed whenever the
+  // caller's casing or whitespace drifted from what was stored (autofill, a mobile keyboard, …).
+  it('normalises the email before it reaches the DB lookup and the Redis session hash, not just the rate limiter', async () => {
+    tryLoginShopOwner.mockResolvedValueOnce({ _id, login: {} })
+    makeOnboardingData.mockReturnValueOnce(null)
 
-		await login.resolve(null, { ...args, email: '  Shop@Marketplace.TEST  ' }, ctx)
+    await login.resolve(null, { ...args, email: '  Shop@Marketplace.TEST  ' }, ctx)
 
-		expect(tryLoginShopOwner).toHaveBeenCalledExactlyOnceWith('shop@marketplace.test', args.password, {
-			withTransaction,
-			endSession
-		})
-		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
-			ACCESS,
-			REFRESH,
-			expect.objectContaining({ email: 'shop@marketplace.test' }),
-			true
-		)
-	})
+    expect(tryLoginShopOwner).toHaveBeenCalledExactlyOnceWith('shop@marketplace.test', args.password, {
+      withTransaction,
+      endSession
+    })
+    expect(setRedisLoginSessionShopOwner).toHaveBeenCalledExactlyOnceWith(
+      ACCESS,
+      REFRESH,
+      expect.objectContaining({ email: 'shop@marketplace.test' }),
+      true
+    )
+  })
 
-	// The argument is nullable and the gate still holds: `assertTurnstile` verifies a token only when the
-	// process holds a secret of its own, so a request with no token is refused exactly where it should be
-	// — in a deployment that has the secret — and waved through on a developer box that does not.
-	it('passes an absent turnstileToken through rather than substituting one', async () => {
-		tryLoginShopOwner.mockResolvedValueOnce({ _id, login: {} })
-		makeOnboardingData.mockReturnValueOnce(null)
+  // The argument is nullable and the gate still holds: `assertTurnstile` verifies a token only when the
+  // process holds a secret of its own, so a request with no token is refused exactly where it should be
+  // — in a deployment that has the secret — and waved through on a developer box that does not.
+  it('passes an absent turnstileToken through rather than substituting one', async () => {
+    tryLoginShopOwner.mockResolvedValueOnce({ _id, login: {} })
+    makeOnboardingData.mockReturnValueOnce(null)
 
-		await login.resolve(null, { email: args.email, password: args.password, rememberMe: true }, ctx)
+    await login.resolve(null, { email: args.email, password: args.password, rememberMe: true }, ctx)
 
-		expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ turnstileToken: undefined }))
-	})
+    expect(guardPublicLogin).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ turnstileToken: undefined }))
+  })
 
-	it('closes the session and rethrows as an internal error when the transaction fails', async () => {
-		const error = new Error('mongo down')
-		tryLoginShopOwner.mockRejectedValueOnce(error)
+  it('closes the session and rethrows as an internal error when the transaction fails', async () => {
+    const error = new Error('mongo down')
+    tryLoginShopOwner.mockRejectedValueOnce(error)
 
-		await expect(login.resolve(null, args, ctx)).rejects.toThrow('Internal Server Error')
+    await expect(login.resolve(null, args, ctx)).rejects.toThrow('Internal Server Error')
 
-		expect(captureException).toHaveBeenCalledWith(error)
-		// ⚠️ This block used to open with `console.log('catch', e)` and this line used to assert
-		// it. A login failure has the caller's email address in scope and stdout is a log file, so the
-		// absence is asserted rather than merely unasserted — the day somebody puts the print back while
-		// debugging, the test says so. `loginUser.mts` has always been this way round.
-		expect(log).not.toHaveBeenCalled()
-		expect(setLoginCookies).not.toHaveBeenCalled()
-		expect(endSession).toHaveBeenCalledTimes(1)
-	})
+    expect(captureException).toHaveBeenCalledWith(error)
+    // ⚠️ This block used to open with `console.log('catch', e)` and this line used to assert
+    // it. A login failure has the caller's email address in scope and stdout is a log file, so the
+    // absence is asserted rather than merely unasserted — the day somebody puts the print back while
+    // debugging, the test says so. `loginUser.mts` has always been this way round.
+    expect(log).not.toHaveBeenCalled()
+    expect(setLoginCookies).not.toHaveBeenCalled()
+    expect(endSession).toHaveBeenCalledTimes(1)
+  })
 
-	// B43: `session.withTransaction` retries its callback on a `TransientTransactionError` — two
-	// near-simultaneous logins for the same account WriteConflicting inside `updateLoginStats` is a
-	// real trigger, not a hypothetical one. Before this fix the Redis mint and the cookie set lived
-	// inside that callback, so a retry minted a second, never-cleaned-up session and could send a
-	// second `Set-Cookie`. Simulated here by making the shared `withTransaction` mock run its callback
-	// twice, exactly as mongoose does on a retry.
-	it('mints the Redis session and sets the cookie once, even when withTransaction retries its callback', async () => {
-		tryLoginShopOwner.mockResolvedValue({ _id, login: {} })
-		makeOnboardingData.mockReturnValue(null)
-		withTransaction.mockImplementationOnce(async (fn: () => Promise<void>) => {
-			await fn() // the attempt that hits the WriteConflict
-			return fn() // mongoose's own retry
-		})
+  // B43: `session.withTransaction` retries its callback on a `TransientTransactionError` — two
+  // near-simultaneous logins for the same account WriteConflicting inside `updateLoginStats` is a
+  // real trigger, not a hypothetical one. Before this fix the Redis mint and the cookie set lived
+  // inside that callback, so a retry minted a second, never-cleaned-up session and could send a
+  // second `Set-Cookie`. Simulated here by making the shared `withTransaction` mock run its callback
+  // twice, exactly as mongoose does on a retry.
+  it('mints the Redis session and sets the cookie once, even when withTransaction retries its callback', async () => {
+    tryLoginShopOwner.mockResolvedValue({ _id, login: {} })
+    makeOnboardingData.mockReturnValue(null)
+    withTransaction.mockImplementationOnce(async (fn: () => Promise<void>) => {
+      await fn() // the attempt that hits the WriteConflict
+      return fn() // mongoose's own retry
+    })
 
-		await login.resolve(null, args, ctx)
+    await login.resolve(null, args, ctx)
 
-		expect(tryLoginShopOwner).toHaveBeenCalledTimes(2)
-		expect(updateLoginStats).toHaveBeenCalledTimes(2)
-		expect(setRedisLoginSessionShopOwner).toHaveBeenCalledTimes(1)
-		expect(setLoginCookies).toHaveBeenCalledTimes(1)
-	})
+    expect(tryLoginShopOwner).toHaveBeenCalledTimes(2)
+    expect(updateLoginStats).toHaveBeenCalledTimes(2)
+    expect(setRedisLoginSessionShopOwner).toHaveBeenCalledTimes(1)
+    expect(setLoginCookies).toHaveBeenCalledTimes(1)
+  })
 })

@@ -14,8 +14,8 @@ import { GraphQLNonNull, GraphQLObjectType, GraphQLString } from 'graphql'
  * additive where replacing a scalar with one is a breaking schema change.
  */
 export const LoginUserType = new GraphQLObjectType({
-	name: 'LoginUserType',
-	fields: () => ({
-		accessToken: { type: new GraphQLNonNull(GraphQLString) }
-	})
+  name: 'LoginUserType',
+  fields: () => ({
+    accessToken: { type: new GraphQLNonNull(GraphQLString) }
+  })
 })
