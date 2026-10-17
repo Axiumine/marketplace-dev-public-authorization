@@ -256,8 +256,10 @@ export default [
       parserOptions: { ecmaVersion: 'latest', sourceType: 'module' }
     },
     plugins: sharedTsBlock.plugins,
-    // The shared block carries `indent: ['error', 'tab']`; indentation is two spaces here (prettier `useTabs: false`).
-    rules: { ...sharedTsBlock.rules, indent: ['error', 2] }
+    // Prettier alone owns indentation (two spaces, ADR-058). The shared TS block carries `indent: ['error', 'tab']`, which
+    // `eslint-config-prettier` switches off for src/** because it is spread last; this block copies the rules without that
+    // spread, so the tab rule would fire on every two-space line in test/ and vitest.*.mts. Off, as in the other services.
+    rules: { ...sharedTsBlock.rules, indent: 'off' }
   },
   // The root-level JS config files — this file and stryker.config.mjs. The shared config's JS block
   // is scoped to `src/**/*.{js,cjs,mjs}`, and a service whose sources are all .mts has no JS under
