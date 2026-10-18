@@ -47,8 +47,8 @@ import * as Sentry from '@sentry/node'
  *
  * ⚠️ **`httpBodies` does not stop the request body reaching an event, and never did** (measured).
  * `@sentry/core` hard-wires `include.data = true` on the requestdata integration
- * (`integrations/requestdata.js:27-28`, above the comment *"dataCollection.httpBodies gates write-time,
- * not read-time"*), so the captured bytes are copied onto `event.request.data` whatever `httpBodies`
+ * (`integrations/requestdata.js:28-29`, `data: true` under the comment *"dataCollection.httpBodies gates
+ * write-time, not read-time"*), so the captured bytes are copied onto `event.request.data` whatever `httpBodies`
  * says — it reaches the `http.request.body.data` **span** attribute and nothing else. The write-time gate
  * is `maxIncomingRequestBodySize`, whose default is `"medium"`, which is why it is passed below: with it
  * at `"none"` the body is never captured, so there is nothing for a later hook to have to remove.
