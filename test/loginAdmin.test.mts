@@ -37,7 +37,8 @@ vi.mock('@axiumine/koa-utils/lib/tokens', () => ({
   generateAccessToken: () => ACCESS,
   generateRefreshToken: () => REFRESH
 }))
-vi.mock('@sentry/node', () => ({ captureException }))
+// koa-utils >= 8 reads captureMessage and withScope off @sentry/node as soon as it loads, so the factory must export both.
+vi.mock('@sentry/node', () => ({ captureException, captureMessage: vi.fn(), withScope: vi.fn() }))
 
 const { loginAdmin } = await import('../src/graphQLPublic/schema/mutations/loginAdmin.mts')
 
