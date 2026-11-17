@@ -137,7 +137,7 @@ The `pre-push` hook lives in `.githooks/` (tracked in git). It is activated by:
 git config core.hooksPath .githooks
 ```
 
-The `prepare` script in `package.json` runs this automatically on `yarn install`, so a
+The `postinstall` script in `package.json` runs this automatically on `yarn install`, so a
 fresh clone is gated after the first install. To verify:
 
 ```bash
@@ -160,7 +160,7 @@ wiring, no logic.
 
 `src/index.mts` used to call `httpServer.listen({ port: process.env.PORT, hostname: process.env.HOSTNAME }, ...)`.
 `hostname` is not a `net.Server.listen()` option — Node's key is `host` — so that field was silently
-dropped on every boot, verified empirically on Node v24.14.0. With no valid `host`, Node binds the
+dropped on every boot, verified empirically on Node v26.13.1. With no valid `host`, Node binds the
 unspecified address, i.e. every interface, regardless of what `HOSTNAME` held. The server has therefore
 always listened on every interface; the `HOSTNAME` env var never had any effect, in any environment,
 ever.
