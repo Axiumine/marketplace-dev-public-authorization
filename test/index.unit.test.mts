@@ -686,6 +686,18 @@ describe('start (success path)', () => {
     info.mockRestore()
   })
 
+  // The banner is the one sign in the journal that a boot got as far as listening.
+  it('logs the listening banner from the listen() callback', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+
+    const server = await start()
+
+    expect(info).toHaveBeenCalledWith(`Serving http://*:${process.env.PORT}${ENDPOINT} for ${process.env.NODE_ENV}.`)
+
+    await server?.apolloServer.stop()
+    info.mockRestore()
+  })
+
   /*
    * ⚠️ Two things at once, and both are ordering. The keys are read with THIS service's own name — the
    * holders table is worthless if five services write the same label — and they are read BEFORE field
@@ -943,6 +955,20 @@ describe('createServer (real Koa/Apollo assembly, driven over a real socket)', (
 
     expect(res.status).toBe(400)
     expect(json.errors?.[0]?.message).toContain('potential Cross-Site Request Forgery')
+  })
+
+  // The outermost middleware: whatever is thrown below it leaves as this platform's JSON error body,
+  // not as Koa's plain text.
+  it('answers a body it cannot parse with a JSON error body', async () => {
+    const res = await fetch(`${base}${ENDPOINT}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{'
+    })
+
+    expect(res.status).toBe(400)
+    expect(res.headers.get('content-type')).toContain('application/json')
+    await expect(res.json()).resolves.toEqual({ message: expect.any(String) })
   })
 
   // `/health` is what the systemd unit and the monitor poll, and it answers before any credential is

@@ -2,6 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    // This project never emits, so declaration output is moot — and with it on, vitest 5 trips TS2883
+    // ("inferred type cannot be named") on a helper that returns bare `vi.fn()` mocks.
+    "declaration": false,
+    "declarationDir": null,
     "rootDir": ".",
     "types": ["node"],
     // test/ imports its own siblings and the vitest configs with an explicit .mts extension —

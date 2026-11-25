@@ -9,7 +9,6 @@ Tier/concern split, port table, terminology, auth model live there. Not here.
 |---|---|
 | what this svc is, its GraphQL surface, its traps | [`README.md`](./README.md) |
 | hook internals, gate order, node selection, mutation-gate rationale | [`REPO.md`](./REPO.md) |
-| GitNexus rules, CLI, registry name (`marketplace-dev-public-authorization`) | [`AGENTS.md`](./AGENTS.md) |
 | anything cross-repo | parent `CLAUDE.md` |
 
 ## ⚠️ NEVER run the mutation gate by hand
@@ -24,7 +23,7 @@ every pull request — two callers, both automated, and a hand is neither.
 
 - **Never commit on `main`.** Branch first: `git switch -c <type>/<slug>`. Merge = user decision alone.
 - Merged → delete branch: `git branch -d <slug>`. `-d` only. `-D` never.
-- **No remote.** Push-on-request: no `git push` unless the user asked for it in that message.
+- **Push-on-request:** no `git push` unless the user asked for it in that message.
 - **Never lower a coverage or mutation threshold, and never remove a gate.** Threshold miss → write the
   missing test. Bypasses (`SKIP_QODANA=1`, `--no-verify`) are gate removals: use only when the user says so.
 - Two spaces, not tabs. prettier enforces it (`useTabs: false`, `tabWidth: 2`), and eslint `indent` is set to 2 for the tests.
@@ -36,11 +35,3 @@ every pull request — two callers, both automated, and a hand is neither.
 
 commit → secret guard, lint, types, coverage, Qodana. push → same + semgrep (SAST) + trivy (dependency
 advisories) + mutation. All blocking. Why: [`REPO.md`](./REPO.md).
-
-## GitNexus
-
-- **Run `impact({target, repo})` before editing a symbol.**
-- **Run `detect_changes()` before committing.** `repo:` is mandatory — always a `marketplace*` registry
-  name.
-
-Full CLI, tool reference and cross-repo group setup: [`AGENTS.md`](./AGENTS.md).
